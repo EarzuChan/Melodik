@@ -1,0 +1,58 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "debug-dev",
+      "displayName": "Debug Dev",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/debug-dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MELODICK_BUILD_TESTS": "ON",
+        "MELODICK_BUILD_APP": "ON"
+      }
+    },
+    {
+      "name": "release-prod",
+      "displayName": "Release Prod",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/release-prod",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MELODICK_BUILD_TESTS": "ON",
+        "MELODICK_BUILD_APP": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug-dev",
+      "configurePreset": "debug-dev"
+    },
+    {
+      "name": "release-prod",
+      "configurePreset": "release-prod"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug-dev",
+      "configurePreset": "debug-dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-prod",
+      "configurePreset": "release-prod",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+build/
+samples/
+build-*/
+.idea/
+.vs/
+cmake-build-*/
+out/
+*.user
+*.suo
+*.VC.db
+*.log
+*.tmp
