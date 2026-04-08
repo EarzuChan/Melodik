@@ -19,7 +19,7 @@ MELODICK_TEST(render_group_planner_merges_linked_contiguous_notes) {
     auto units = planner.plan({n1, n2});
 
     MELODICK_EXPECT_EQ(units.size(), static_cast<std::size_t>(1));
-    MELODICK_EXPECT_EQ(units[0].notes.size(), static_cast<std::size_t>(2));
+    MELODICK_EXPECT_EQ(units[0].note_ids.size(), static_cast<std::size_t>(2));
 }
 
 MELODICK_TEST(dirty_timeline_and_scheduler_follow_playhead) {
@@ -28,9 +28,9 @@ MELODICK_TEST(dirty_timeline_and_scheduler_follow_playhead) {
     dirty.mark_dirty({.start_seconds = 2.0, .end_seconds = 2.5});
     dirty.mark_clean({.start_seconds = 0.0, .end_seconds = 0.8});
 
-    melodick::render::RenderUnit a {.span = {.start_seconds = 0.0, .end_seconds = 1.0}, .notes = {}};
-    melodick::render::RenderUnit b {.span = {.start_seconds = 1.0, .end_seconds = 2.0}, .notes = {}};
-    melodick::render::RenderUnit c {.span = {.start_seconds = 2.0, .end_seconds = 3.0}, .notes = {}};
+    melodick::render::RenderUnit a {.span = {.start_seconds = 0.0, .end_seconds = 1.0}, .note_ids = {}};
+    melodick::render::RenderUnit b {.span = {.start_seconds = 1.0, .end_seconds = 2.0}, .note_ids = {}};
+    melodick::render::RenderUnit c {.span = {.start_seconds = 2.0, .end_seconds = 3.0}, .note_ids = {}};
 
     melodick::render::LazyRenderScheduler scheduler {};
     auto plan = scheduler.plan_from_playhead(1.0, {a, b, c}, dirty, 2);

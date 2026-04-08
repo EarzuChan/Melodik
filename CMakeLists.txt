@@ -72,6 +72,11 @@ add_library(melodick_project
 )
 target_include_directories(melodick_project PUBLIC include)
 target_link_libraries(melodick_project PUBLIC melodick_core)
+if(WIN32)
+    target_link_libraries(melodick_project PUBLIC winsqlite3)
+else()
+    message(FATAL_ERROR "Current project persistence implementation requires winsqlite3 on Windows.")
+endif()
 target_link_libraries(melodick_app PUBLIC melodick_project)
 
 if(MELODICK_BUILD_APP)

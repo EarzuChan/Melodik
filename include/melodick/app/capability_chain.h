@@ -10,7 +10,6 @@
 namespace melodick::app {
 
 struct CapabilityAnalysis {
-    core::PitchSlice f0 {};
     std::vector<core::NoteBlob> blobs {};
 };
 
@@ -22,9 +21,9 @@ public:
         const capabilities::SegmenterConfig& segmenter_config = {});
 
     [[nodiscard]] CapabilityAnalysis analyze_and_segment(const std::vector<float>& mono_samples, int sample_rate) const;
-    [[nodiscard]] std::vector<float> resynthesize_blob(
-        const core::NoteBlob& blob,
-        const std::vector<float>& source_audio,
+    void prepare_blob(core::NoteBlob& blob, int sample_rate) const;
+    [[nodiscard]] std::vector<float> resynthesize_group(
+        const std::vector<core::NoteBlob>& blobs,
         int sample_rate) const;
 
 private:

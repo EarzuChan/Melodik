@@ -18,16 +18,19 @@ CapabilityChain::CapabilityChain(
 
 CapabilityAnalysis CapabilityChain::analyze_and_segment(const std::vector<float>& mono_samples, int sample_rate) const {
     CapabilityAnalysis out {};
-    out.f0 = pitch_extractor_->extract_f0(mono_samples, sample_rate);
-    out.blobs = segmenter_.build_segments(out.f0);
+    const auto f0 = pitch_extractor_->extract_f0(mono_samples, sample_rate);
+    out.blobs = segmenter_.build_segments(f0);
     return out;
 }
 
-std::vector<float> CapabilityChain::resynthesize_blob(
-    const core::NoteBlob& blob,
-    const std::vector<float>& source_audio,
+void CapabilityChain::prepare_blob(core::NoteBlob& blob, const int sample_rate) const {
+    vocoder_->prepare_blob(blob, sample_rate);
+}
+
+std::vector<float> CapabilityChain::resynthesize_group(
+    const std::vector<core::NoteBlob>& blobs,
     const int sample_rate) const {
-    return vocoder_->render_note_audio(blob, source_audio, sample_rate);
+    return vocoder_->render_group_audio(blobs, sample_rate);
 }
 
 } // namespace melodick::app

@@ -204,20 +204,50 @@ MelResult compute_log_mel(const std::vector<float>& audio, const int sample_rate
     return MelResult {.mel = std::move(mel), .frames = frames};
 }
 
-std::vector<float> interpolate_note_f0_hz(const core::NoteBlob& note, const std::size_t frames, const int sample_rate) {
-    std::vector out(frames, 0.0f);
-    if (frames == 0) return out;
+std::vector<core::PitchPoint> collect_group_pitch_points(const std::vector<core::NoteBlob>& notes) {
+    std::vector<core::PitchPoint> points {};
+    for (const auto& note : notes) {
+        const auto final_curve = note.final_pitch_curve();
+        if (!final_curve.empty()) {
+            points.insert(points.end(), final_curve.begin(), final_curve.end());
+            continue;
+        }
 
-    if (note.edited_pitch_slice.empty()) {
-        std::ranges::fill(out, midi_to_hz(static_cast<float>(note.display_pitch_midi)));
+        core::PitchPoint p0 {};
+        p0.seconds = note.time.start_seconds;
+        p0.midi = note.final_display_pitch_midi();
+        p0.voiced = p0.midi > 0.0;
+        p0.confidence = 1.0f;
+
+        core::PitchPoint p1 = p0;
+        p1.seconds = note.time.end_seconds;
+        points.push_back(p0);
+        points.push_back(p1);
+    }
+
+    std::sort(points.begin(), points.end(), [](const core::PitchPoint& a, const core::PitchPoint& b) {
+        return a.seconds < b.seconds;
+    });
+    return points;
+}
+
+std::vector<float> interpolate_points_f0_hz(
+    const std::vector<core::PitchPoint>& points,
+    const std::size_t frames,
+    const double timeline_start_seconds,
+    const int sample_rate) {
+    std::vector<float> out(frames, 0.0f);
+    if (frames == 0 || points.empty()) {
         return out;
     }
 
-    const auto& points = note.edited_pitch_slice;
     std::size_t j = 0;
     for (std::size_t i = 0; i < frames; ++i) {
-        const double t = note.time.start_seconds + static_cast<double>(i * static_cast<std::size_t>(kVocoderHop)) / static_cast<double>(sample_rate);
-        while (j + 1 < points.size() && points[j + 1].seconds < t) ++j;
+        const double t = timeline_start_seconds
+            + static_cast<double>(i * static_cast<std::size_t>(kVocoderHop)) / static_cast<double>(sample_rate);
+        while (j + 1 < points.size() && points[j + 1].seconds < t) {
+            ++j;
+        }
 
         const auto& p0 = points[j];
         if (!p0.voiced) {
@@ -243,8 +273,59 @@ std::vector<float> interpolate_note_f0_hz(const core::NoteBlob& note, const std:
         }
 
         const float alpha = static_cast<float>((t - p0.seconds) / dt);
-        const float midi = static_cast<float>(p0.midi) + (static_cast<float>(p1.midi) - static_cast<float>(p0.midi)) * std::clamp(alpha, 0.0f, 1.0f);
+        const float midi = static_cast<float>(p0.midi)
+            + (static_cast<float>(p1.midi) - static_cast<float>(p0.midi)) * std::clamp(alpha, 0.0f, 1.0f);
         out[i] = midi_to_hz(midi);
+    }
+    return out;
+}
+
+core::TimeRange group_time_span(const std::vector<core::NoteBlob>& notes) {
+    core::TimeRange span {};
+    if (notes.empty()) {
+        return span;
+    }
+    span.start_seconds = notes.front().time.start_seconds;
+    span.end_seconds = notes.front().time.end_seconds;
+    for (const auto& note : notes) {
+        span.start_seconds = std::min(span.start_seconds, note.time.start_seconds);
+        span.end_seconds = std::max(span.end_seconds, note.time.end_seconds);
+    }
+    return span;
+}
+
+std::vector<float> assemble_group_source_audio(
+    const std::vector<core::NoteBlob>& notes,
+    const core::TimeRange& span,
+    const int sample_rate) {
+    const auto target_samples = static_cast<std::size_t>(
+        std::max(0.0, span.end_seconds - span.start_seconds) * static_cast<double>(sample_rate));
+    if (target_samples == 0) {
+        return {};
+    }
+
+    std::vector<float> out(target_samples, 0.0f);
+    for (const auto& note : notes) {
+        if (note.source_audio_44k.empty()) {
+            continue;
+        }
+        const auto source = sample_rate == kModelSampleRate
+            ? note.source_audio_44k
+            : resample_linear(note.source_audio_44k, kModelSampleRate, sample_rate);
+
+        const auto offset = static_cast<std::size_t>(
+            std::max(0.0, note.time.start_seconds - span.start_seconds) * static_cast<double>(sample_rate));
+        for (std::size_t i = 0; i < source.size(); ++i) {
+            const auto out_index = offset + i;
+            if (out_index >= out.size()) {
+                break;
+            }
+            out[out_index] += source[i];
+        }
+    }
+
+    for (auto& s : out) {
+        s = std::clamp(s, -1.0f, 1.0f);
     }
     return out;
 }
@@ -457,21 +538,55 @@ public:
         if (mel_index_ < 0 || f0_index_ < 0) throw std::runtime_error("HiFiGAN model missing required inputs (mel/f0)");
     }
 
-    std::vector<float> render_note_audio(const core::NoteBlob& note, const std::vector<float>& source_audio, int sample_rate) override {
-        if (source_audio.empty()) return {};
+    void prepare_blob(core::NoteBlob& note, const int sample_rate) override {
+        (void)sample_rate;
+        note.source_mel_bins = 0;
+        note.source_mel_frames = 0;
+        note.source_mel_log.clear();
+        if (note.source_audio_44k.empty()) {
+            return;
+        }
+
+        const auto mel = compute_log_mel(note.source_audio_44k, kModelSampleRate);
+        note.source_mel_bins = kMelBins;
+        note.source_mel_frames = static_cast<int>(mel.frames);
+        note.source_mel_log = mel.mel;
+    }
+
+    std::vector<float> render_group_audio(const std::vector<core::NoteBlob>& notes, int sample_rate) override {
+        if (notes.empty()) return {};
         if (sample_rate <= 0) throw std::invalid_argument("sample_rate must be positive");
 
-        const auto target_samples = static_cast<std::size_t>(std::max(0.0, note.duration()) * sample_rate);
+        const auto span = group_time_span(notes);
+        const auto target_samples = static_cast<std::size_t>(
+            std::max(0.0, span.end_seconds - span.start_seconds) * static_cast<double>(sample_rate));
+        if (target_samples == 0) {
+            return {};
+        }
 
-        auto source_model = sample_rate == kModelSampleRate ? source_audio : resample_linear(source_audio, sample_rate, kModelSampleRate);
-        if (const auto model_target_samples = static_cast<std::size_t>(std::max(0.0, note.duration()) * kModelSampleRate); model_target_samples > 0 && source_model.size() != model_target_samples) source_model = resample_to_length(source_model, model_target_samples);
-        if (source_model.empty()) return {};
+        const auto source_group = assemble_group_source_audio(notes, span, sample_rate);
+        if (source_group.empty()) {
+            return std::vector<float>(target_samples, 0.0f);
+        }
+
+        auto source_model = sample_rate == kModelSampleRate
+            ? source_group
+            : resample_linear(source_group, sample_rate, kModelSampleRate);
+        if (source_model.empty()) {
+            return std::vector<float>(target_samples, 0.0f);
+        }
+        if (const auto model_target_samples = static_cast<std::size_t>(
+                std::max(0.0, span.end_seconds - span.start_seconds) * static_cast<double>(kModelSampleRate));
+            model_target_samples > 0 && source_model.size() != model_target_samples) {
+            source_model = resample_to_length(source_model, model_target_samples);
+        }
 
         auto mel_result = compute_log_mel(source_model, kModelSampleRate);
         if (mel_result.frames == 0 || mel_result.mel.empty()) return {};
 
         const auto frames = mel_result.frames;
-        auto f0_hz = interpolate_note_f0_hz(note, frames, kModelSampleRate);
+        const auto points = collect_group_pitch_points(notes);
+        auto f0_hz = interpolate_points_f0_hz(points, frames, span.start_seconds, kModelSampleRate);
         fill_small_f0_gaps(f0_hz, 8);
         std::vector uv(frames, 0.0f);
 
@@ -582,10 +697,12 @@ public:
         if (count == 0) return {};
         const auto* data = out[0].GetTensorData<float>();
         std::vector rendered_model(data, data + count);
-        if (sample_rate == kModelSampleRate) return resample_to_length(rendered_model, target_samples > 0 ? target_samples : source_audio.size());
+        if (sample_rate == kModelSampleRate) {
+            return resample_to_length(rendered_model, target_samples);
+        }
 
         auto rendered_target = resample_linear(rendered_model, kModelSampleRate, sample_rate);
-        return resample_to_length(rendered_target, target_samples > 0 ? target_samples : source_audio.size());
+        return resample_to_length(rendered_target, target_samples);
     }
 
 private:

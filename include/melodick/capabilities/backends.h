@@ -26,9 +26,9 @@ public:
 class IVocoder {
 public:
     virtual ~IVocoder() = default;
-    virtual std::vector<float> render_note_audio(
-        const core::NoteBlob& note,
-        const std::vector<float>& source_audio,
+    virtual void prepare_blob(core::NoteBlob& note, int sample_rate) = 0;
+    virtual std::vector<float> render_group_audio(
+        const std::vector<core::NoteBlob>& notes,
         int sample_rate) = 0;
 };
 

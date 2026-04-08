@@ -15,7 +15,7 @@ std::vector<RenderUnit> RenderGroupPlanner::plan(const std::vector<core::NoteBlo
 
     RenderUnit current {};
     current.span = notes.front().time;
-    current.notes.push_back(notes.front());
+    current.note_ids.push_back(notes.front().id);
 
     for (std::size_t i = 1; i < notes.size(); ++i) {
         const auto& prev = notes[i - 1];
@@ -30,7 +30,7 @@ std::vector<RenderUnit> RenderGroupPlanner::plan(const std::vector<core::NoteBlo
         const bool contiguous = gap <= config_.max_join_gap_seconds;
 
         if (linked && contiguous) {
-            current.notes.push_back(note);
+            current.note_ids.push_back(note.id);
             current.span.end_seconds = note.time.end_seconds;
             continue;
         }
@@ -38,7 +38,7 @@ std::vector<RenderUnit> RenderGroupPlanner::plan(const std::vector<core::NoteBlo
         units.push_back(std::move(current));
         current = RenderUnit {};
         current.span = note.time;
-        current.notes.push_back(note);
+        current.note_ids.push_back(note.id);
     }
 
     units.push_back(std::move(current));

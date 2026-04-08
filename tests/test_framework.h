@@ -61,4 +61,3 @@ inline int run_all() {
             throw std::runtime_error(std::string("expect eq failed: ") + #lhs + " vs " + #rhs);                        \
         }                                                                                                                \
     } while (false)
-

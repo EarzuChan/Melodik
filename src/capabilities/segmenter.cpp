@@ -1,26 +1,10 @@
 #include "melodick/capabilities/segmenter.h"
 
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace melodick::capabilities {
-
-namespace {
-
-double average_pitch(const core::PitchSlice& slice, std::size_t start, std::size_t end) {
-    double sum = 0.0;
-    std::size_t count = 0;
-    for (std::size_t i = start; i <= end && i < slice.size(); ++i) {
-        if (!slice[i].voiced) {
-            continue;
-        }
-        sum += slice[i].midi;
-        ++count;
-    }
-    return count == 0 ? 60.0 : (sum / static_cast<double>(count));
-}
-
-} // namespace
 
 NoteBlobSegmenter::NoteBlobSegmenter(SegmenterConfig config)
     : config_(config) {}
@@ -54,10 +38,11 @@ std::vector<core::NoteBlob> NoteBlobSegmenter::build_segments(const core::PitchS
         note.id = next_id++;
         note.time = {.start_seconds = start_time, .end_seconds = end_time};
         note.original_start_seconds = start_time;
-        note.original_end_seconds = end_time;
-        note.original_pitch_slice = original;
-        note.edited_pitch_slice = original;
-        note.display_pitch_midi = average_pitch(f0, start_index, end_index);
+        note.original_duration_seconds = end_time - start_time;
+        note.original_pitch_curve = original;
+        note.handdraw_patch_midi.assign(original.size(), std::numeric_limits<float>::quiet_NaN());
+        note.global_transpose_semitones = 0.0;
+        note.time_ratio = 1.0;
         notes.push_back(std::move(note));
     };
 

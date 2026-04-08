@@ -98,12 +98,13 @@ void write_segments_csv(const std::filesystem::path& out_path, const std::vector
     out << "id,start_s,end_s,duration_s,display_midi,display_hz,detached,link_prev,link_next\n";
     out << std::fixed << std::setprecision(6);
     for (const auto& n : notes) {
+        const auto display = n.final_display_pitch_midi();
         out << n.id << ','
             << n.time.start_seconds << ','
             << n.time.end_seconds << ','
             << n.duration() << ','
-            << n.display_pitch_midi << ','
-            << midi_to_hz(n.display_pitch_midi) << ','
+            << display << ','
+            << midi_to_hz(display) << ','
             << (n.detached ? 1 : 0) << ',';
         if (n.link_prev.has_value()) {
             out << n.link_prev.value();
@@ -175,12 +176,13 @@ int main(int argc, char** argv) {
 
         std::filesystem::create_directories(out_dir);
 
-        const auto wav = melodick::io::read_wav_mono(input_path);
+        const auto wav = melodick::io::read_wav(input_path);
+        const auto mono = melodick::io::downmix_to_mono(wav.interleaved_samples, wav.channels);
         auto cfg = melodick::capabilities::default_backend_config();
         auto pitch = melodick::capabilities::create_pitch_extractor(cfg);
         melodick::capabilities::NoteBlobSegmenter segmenter {};
 
-        const auto f0 = pitch->extract_f0(wav.mono_samples, wav.sample_rate);
+        const auto f0 = pitch->extract_f0(mono, wav.sample_rate);
         const auto notes = segmenter.build_segments(f0);
 
         const auto meta_path = out_dir / "analysis_meta.json";
@@ -188,14 +190,14 @@ int main(int argc, char** argv) {
         const auto segments_path = out_dir / "analysis_segments.csv";
         const auto waveform_path = out_dir / "analysis_waveform.csv";
 
-        write_meta_json(meta_path, input_path, wav.sample_rate, wav.mono_samples.size(), f0.size(), notes.size());
+        write_meta_json(meta_path, input_path, wav.sample_rate, mono.size(), f0.size(), notes.size());
         write_f0_csv(f0_path, f0);
         write_segments_csv(segments_path, notes);
-        write_waveform_csv(waveform_path, wav.mono_samples, wav.sample_rate, wave_points_per_second);
+        write_waveform_csv(waveform_path, mono, wav.sample_rate, wave_points_per_second);
 
         std::cout << "analysis dump done: "
                   << "sr=" << wav.sample_rate
-                  << " samples=" << wav.mono_samples.size()
+                  << " samples=" << mono.size()
                   << " f0=" << f0.size()
                   << " notes=" << notes.size()
                   << " out_dir=" << out_dir.string()

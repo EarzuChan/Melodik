@@ -1,19 +1,27 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 #include "melodick/core/note_blob.h"
-#include "melodick/core/pitch_data.h"
 
 namespace melodick::project {
 
-struct ProjectState {
-    int sample_rate {0};
+struct TrackProjectState {
+    std::int64_t id {0};
+    std::string name {};
+    bool mute {false};
+    bool solo {false};
+    double gain_db {0.0};
     double duration_seconds {0.0};
-    std::string source_audio_path {};
-    core::PitchSlice analysis_f0 {};
     std::vector<core::NoteBlob> blobs {};
+};
+
+struct ProjectState {
+    int session_sample_rate {44100};
+    double duration_seconds {0.0};
+    std::vector<TrackProjectState> tracks {};
 };
 
 void save_project_state(const std::string& path, const ProjectState& state);

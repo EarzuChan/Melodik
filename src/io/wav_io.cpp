@@ -65,7 +65,7 @@ float decode_pcm24(const unsigned char* p) {
 
 } // namespace
 
-WavData read_wav_mono(const std::string& path) {
+WavData read_wav(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         throw std::runtime_error("cannot open wav: " + path);
@@ -140,12 +140,11 @@ WavData read_wav_mono(const std::string& path) {
     }
 
     const std::size_t frame_count = data_bytes.size() / block_align;
-    std::vector<float> mono {};
-    mono.reserve(frame_count);
+    std::vector<float> interleaved {};
+    interleaved.reserve(frame_count * static_cast<std::size_t>(channels));
 
     for (std::size_t frame = 0; frame < frame_count; ++frame) {
         const auto* frame_ptr = data_bytes.data() + frame * block_align;
-        double acc = 0.0;
 
         for (std::uint16_t ch = 0; ch < channels; ++ch) {
             const auto* s = frame_ptr + ch * (bits_per_sample / 8);
@@ -172,31 +171,71 @@ WavData read_wav_mono(const std::string& path) {
                 std::memcpy(&sample, s, sizeof(sample));
             }
 
-            acc += static_cast<double>(sample);
+            interleaved.push_back(sample);
         }
-
-        mono.push_back(static_cast<float>(acc / static_cast<double>(channels)));
     }
 
-    return WavData {.sample_rate = static_cast<int>(sample_rate), .mono_samples = std::move(mono)};
+    return WavData {
+        .sample_rate = static_cast<int>(sample_rate),
+        .channels = static_cast<int>(channels),
+        .bits_per_sample = static_cast<int>(bits_per_sample),
+        .is_float = audio_format == 3,
+        .interleaved_samples = std::move(interleaved),
+    };
 }
 
-void write_wav_mono_16(const std::string& path, const std::vector<float>& mono_samples, int sample_rate) {
-    if (sample_rate <= 0) {
+std::vector<float> downmix_to_mono(const std::vector<float>& interleaved_samples, const int channels) {
+    if (channels <= 0) {
+        throw std::invalid_argument("channels must be positive");
+    }
+    if (interleaved_samples.empty()) {
+        return {};
+    }
+    if (channels == 1) {
+        return interleaved_samples;
+    }
+
+    const std::size_t frames = interleaved_samples.size() / static_cast<std::size_t>(channels);
+    std::vector<float> mono(frames, 0.0f);
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        const auto base = frame * static_cast<std::size_t>(channels);
+        double sum = 0.0;
+        for (int ch = 0; ch < channels; ++ch) {
+            sum += static_cast<double>(interleaved_samples[base + static_cast<std::size_t>(ch)]);
+        }
+        mono[frame] = static_cast<float>(sum / static_cast<double>(channels));
+    }
+    return mono;
+}
+
+void write_wav(const std::string& path, const std::vector<float>& interleaved_samples, const WavWriteSpec& spec) {
+    if (spec.sample_rate <= 0) {
         throw std::invalid_argument("sample_rate must be positive");
     }
+    if (spec.channels <= 0) {
+        throw std::invalid_argument("channels must be positive");
+    }
+
+    const int bits = spec.bits_per_sample;
+    if (spec.ieee_float) {
+        if (bits != 32) {
+            throw std::invalid_argument("ieee_float wav only supports 32-bit");
+        }
+    } else if (bits != 16 && bits != 24 && bits != 32) {
+        throw std::invalid_argument("pcm wav only supports 16/24/32-bit");
+    }
+
+    const std::size_t bytes_per_sample = static_cast<std::size_t>(bits / 8);
+    const auto channels_u16 = static_cast<std::uint16_t>(spec.channels);
+    const auto block_align = static_cast<std::uint16_t>(channels_u16 * static_cast<std::uint16_t>(bytes_per_sample));
+    const auto byte_rate = static_cast<std::uint32_t>(spec.sample_rate) * static_cast<std::uint32_t>(block_align);
+    const auto data_size = static_cast<std::uint32_t>(interleaved_samples.size() * bytes_per_sample);
+    const auto riff_size = static_cast<std::uint32_t>(4 + (8 + 16) + (8 + data_size));
 
     std::ofstream out(path, std::ios::binary);
     if (!out) {
         throw std::runtime_error("cannot open output wav: " + path);
     }
-
-    constexpr std::uint16_t channels = 1;
-    constexpr std::uint16_t bits = 16;
-    const std::uint32_t byte_rate = static_cast<std::uint32_t>(sample_rate) * channels * (bits / 8);
-    const std::uint16_t block_align = channels * (bits / 8);
-    const std::uint32_t data_size = static_cast<std::uint32_t>(mono_samples.size() * (bits / 8));
-    const std::uint32_t riff_size = 4 + (8 + 16) + (8 + data_size);
 
     out.write("RIFF", 4);
     write_u32_le(out, riff_size);
@@ -204,25 +243,55 @@ void write_wav_mono_16(const std::string& path, const std::vector<float>& mono_s
 
     out.write("fmt ", 4);
     write_u32_le(out, 16);
-    write_u16_le(out, 1); // PCM
-    write_u16_le(out, channels);
-    write_u32_le(out, static_cast<std::uint32_t>(sample_rate));
+    write_u16_le(out, static_cast<std::uint16_t>(spec.ieee_float ? 3 : 1));
+    write_u16_le(out, channels_u16);
+    write_u32_le(out, static_cast<std::uint32_t>(spec.sample_rate));
     write_u32_le(out, byte_rate);
     write_u16_le(out, block_align);
-    write_u16_le(out, bits);
+    write_u16_le(out, static_cast<std::uint16_t>(bits));
 
     out.write("data", 4);
     write_u32_le(out, data_size);
 
-    for (float v : mono_samples) {
+    for (float v : interleaved_samples) {
         const float clamped = std::clamp(v, -1.0f, 1.0f);
-        const auto i16 = static_cast<std::int16_t>(std::lrint(clamped * 32767.0f));
-        out.write(reinterpret_cast<const char*>(&i16), sizeof(i16));
+        if (spec.ieee_float) {
+            out.write(reinterpret_cast<const char*>(&clamped), sizeof(clamped));
+            continue;
+        }
+
+        if (bits == 16) {
+            const auto i16 = static_cast<std::int16_t>(std::lrint(clamped * 32767.0f));
+            out.write(reinterpret_cast<const char*>(&i16), sizeof(i16));
+            continue;
+        }
+        if (bits == 24) {
+            const auto i24 = static_cast<std::int32_t>(std::lrint(clamped * 8388607.0f));
+            const unsigned char b0 = static_cast<unsigned char>(i24 & 0xFF);
+            const unsigned char b1 = static_cast<unsigned char>((i24 >> 8) & 0xFF);
+            const unsigned char b2 = static_cast<unsigned char>((i24 >> 16) & 0xFF);
+            out.put(static_cast<char>(b0));
+            out.put(static_cast<char>(b1));
+            out.put(static_cast<char>(b2));
+            continue;
+        }
+
+        const auto i32 = static_cast<std::int32_t>(std::lrint(clamped * 2147483647.0f));
+        out.write(reinterpret_cast<const char*>(&i32), sizeof(i32));
     }
 
     if (!out) {
         throw std::runtime_error("failed while writing wav");
     }
+}
+
+void write_wav_mono_16(const std::string& path, const std::vector<float>& mono_samples, const int sample_rate) {
+    write_wav(path, mono_samples, WavWriteSpec {
+        .sample_rate = sample_rate,
+        .channels = 1,
+        .bits_per_sample = 16,
+        .ieee_float = false,
+    });
 }
 
 } // namespace melodick::io

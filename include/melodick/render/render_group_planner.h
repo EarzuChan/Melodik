@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "melodick/core/note_blob.h"
@@ -8,7 +9,7 @@ namespace melodick::render {
 
 struct RenderUnit {
     core::TimeRange span;
-    std::vector<core::NoteBlob> notes;
+    std::vector<std::int64_t> note_ids;
 };
 
 struct RenderGroupingConfig {

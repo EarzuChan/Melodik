@@ -1,13 +1,13 @@
 # MeloDick 进度追踪（MVP）
 
-更新时间：2026-04-07
+更新时间：2026-04-08
 
 ## 当前阶段
 
-当前处于「地基完成，可并行推进 UI 接线与编辑能力迭代」阶段。
+当前处于「多轨 Blob 会话 + SQLite 工程落盘完成，可开始 UI 接线」阶段。
 
-- 底层链路已打通：`F0 提取 -> NoteBlob 分割 -> 重合成渲染 -> 输出音频`。
-- 会话与渲染语义已统一：编辑状态、脏区、懒渲染、混音输出一致。
+- 底层链路已打通：`导入标准化 -> F0 提取 -> NoteBlob 分割 -> Blob 资产化 -> 连接组重渲染 -> 多轨混音输出`。
+- 会话与渲染语义已统一：多轨编辑状态、派生脏区、懒渲染、轨道混音一致。
 - 仍待攻坚项：高质量音符粒度分割算法、完整编辑器交互、插件态时钟同步。
 
 ## 已完成（本轮重点）
@@ -37,31 +37,80 @@
 - 已支持序列化与反序列化：
   - `save_project_state(path, state)`
   - `load_project_state(path)`
+- 落盘格式已从文本迁移为 SQLite（schema v4，二进制 BLOB 存储）。
 - `Session` 已支持：
   - `capture_project_state(...)`
   - `restore_project_state(...)`
 
-### 5. 稳定性修复
+### 5. 多轨与导入标准化（本轮完成）
+
+- `Session` 已升级为原生多轨：
+  - `create_track / import_audio_as_new_track / import_audio_to_track`
+  - 轨级控制：`mute / solo / gain_db`
+  - 轨级查询：`track_blobs / track_dirty_timeline`
+- 导入标准化已落地：
+  - 输入支持任意采样率、任意声道（内部先 downmix 为 mono）
+  - 会话内部统一到 `44.1kHz / mono / float32`
+- 轨内真相已重构：
+  - Track 不再持有整段源音频
+  - Track 不再持有真相级 F0
+  - 导入后直接肢解为 NoteBlob 资产（每 Blob 持有源波形片段 + 原始 F0 + patch 模型 + 编辑元数据 + 可选中间特征）
+  - 工程恢复不再依赖外部音频文件回读
+- 多轨混音规则已落地：
+  - 有任一 `solo` 时只混 `solo` 轨
+  - 无 `solo` 时混所有 `!mute` 轨
+  - 轨级 `gain_db` 作用于该轨混音前结果
+
+### 6. 稳定性修复
 
 - `standalone` 增加 `catch (...)` 兜底，避免未知异常导致不透明退出码。
 - 清理后全量重编译验证通过，CLI 链路可稳定完成渲染并输出文件。
 
-## 对了
+### 7. 渲染与导出（本轮完成）
 
-如果输入文件不是 44.1kHz，现在会做两次采样率转换：
+- 连接组一次渲染已落地：RenderUnit 使用 `note_ids`，组内编辑音符合并调用后端，再按时间窗拆回 Blob 缓存。
+- 导出后端能力已落地（与 UI 解耦）：
+  - Mixdown 导出
+  - Stems 导出（按轨）
+  - 参数化输出：采样率、声道、位深、PCM/Float
 
-F0 提取前会先把输入重采样到 16kHz（RMVPE）onnx_backends.cpp (line 334)。
-人声重合成前会把片段重采样到 44.1kHz（HiFiGAN 工作采样率），模型输出后再重采样回会话采样率（通常就是原采样率）onnx_backends.cpp (line 466), onnx_backends.cpp (line 587)。
+## 采样率现状
+
+- 会话层已固定 `44.1kHz`，导入阶段统一标准化，不再把“原采样率”带进会话真相。
+- 模型层仍按既有实现：
+  - RMVPE：输入重采样到 `16kHz` 做 F0 提取。
+  - HiFiGAN：按 `44.1kHz` 工作。
 
 ## 当前可用能力清单
 
-- 导入单轨干声（wav mono）
+- 导入多轨音频（任意采样率/声道，导入后统一 44.1k mono float32）
 - RMVPE 提取全局 F0
 - 启发式分割为 NoteBlob
 - NoteBlob 级移调、时值拉伸
 - 派生脏区 + 懒渲染
-- 重合成并混音输出整轨
-- 工程态保存/恢复（底层）
+- 多轨重合成与混音输出（支持 solo/mute/track gain）
+- 工程态保存/恢复（SQLite，多轨 Blob 资产，无外部源依赖）
+- 参数化导出（mixdown/stems + 采样率/声道/位深）
+
+## 全面版目标对齐（2026-04-08）
+
+你提出的“会话 44.1k/mono、多轨、音符块内真相、按块渲染拼装、导出可选重采样与分轨”已纳入设计稿，当前实现对齐度如下。
+
+已对齐：
+
+- `NoteBlob` 作为主编辑对象，块内持有 `original_pitch_curve + handdraw_patch + line_patches + transpose + time_ratio` 顺序管线模型。
+- 脏区由 revision 派生，不靠手工 set/unset。
+- 未编辑直通、编辑后重合成、按块缓存并最终拼接混音。
+- 工程状态可保存/恢复（SQLite，包含 NoteBlob 资产与模型字段）。
+
+部分对齐：
+
+- 分割算法仍是启发式 v1，尚未达到 Melodyne/SynthV 级别的稳定音符粒度。
+
+未对齐：
+
+- 尚未接入真正的音符级自动切分算法 v2（当前为启发式 v1）。
+- UI 侧尚未接入导出参数面板与轨内多素材插入交互。
 
 ## 下阶段优先级
 
