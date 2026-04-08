@@ -1,7 +1,7 @@
-# 1) Debug 构建
+# Debug 构建
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Preset debug-dev
 
-# 2) 跑测试
+# 跑测试
 powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Preset debug-dev
 
 # 发行

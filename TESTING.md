@@ -2,13 +2,13 @@
 
 更新时间：2026-04-07
 
-## 1. 原则
+## 原则
 
 - 只测关键链路，优先覆盖高风险回归点。
 - 自动化优先，听感验证作为 AI/DSP 结果补充。
 - 不追求形式化堆量，追求能快速发现“破坏主链路”的问题。
 
-## 2. 自动化测试层次
+## 自动化测试层次
 
 ### T0 构建与冒烟
 
@@ -60,7 +60,7 @@ D:\Python\Python314\python.exe .\scripts\plot_analysis.py .\build\debug-dev\anal
 - 导出 `analysis_meta.json / analysis_waveform.csv / analysis_f0.csv / analysis_segments.csv`
 - overlay 图可读，能对比切分与 F0 连续性变化
 
-## 3. 输入素材前提
+## 输入素材前提
 
 - 当前默认输入为尽量干净的干声。
 - 本阶段不负责去混响、降噪、去伴奏。

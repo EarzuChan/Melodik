@@ -27,12 +27,11 @@ ctest --preset release-prod --output-on-failure
 当前阶段先提供 `Standalone` 开发包，包含：
 
 - `melodick_standalone_bootstrap` 可执行文件
-- 运行所需依赖（后续引入 JUCE/ONNX 时补充 DLL 和模型）
-- `version.json`（后续落地）
+- 运行所需依赖（如AI模型）
 - 用户文档（后续补充）
 
 ## 5. 版本标识
 
-- 早期开发阶段建议版本号：`0.YYYY.MM.DD+gitsha`
+- 早期开发阶段建议版本号：`YYYY.MMDD.gitsha`
 - 版本生成应自动化，避免手工维护。
 

@@ -10,39 +10,35 @@
 - 会话与渲染语义已统一：多轨编辑状态、派生脏区、懒渲染、轨道混音一致。
 - 仍待攻坚项：高质量音符粒度分割算法、完整编辑器交互、插件态时钟同步。
 
-## 已完成（本轮重点）
+## 已完成
 
-### 1. 能力链路重构
+### 能力链路重构
 
 - 新增 `CapabilityChain`，统一承接三项核心能力：
   - F0 提取
   - NoteBlob 分割
   - NoteBlob 重合成
 - `Session` 不再零散拼接能力调用，改为通过 `CapabilityChain` 走统一入口。
-- 模块分层已改为能力导向：移除上层 `ai/analysis` 语义拆分，合并为 `melodick_capabilities`。
+- 模块分层改为能力导向：移除上层 `ai/analysis` 语义拆分，合并为 `melodick_capabilities`。
 
-### 2. NoteSegment -> NoteBlob
-
-- 核心代码已完成术语迁移，不赖。
-
-### 3. 渲染语义完善
+### 渲染语义完善
 
 - 脏区改为派生语义：通过 `NoteBlob.edit_revision` 与渲染缓存 revision 对比得到。
 - 未编辑直通：`is_unedited()` 为真时，直接复用原始音频片段，不走 vocoder。
 - 时值拉伸走重合成：拉伸后的 NoteBlob 必经重渲染，不做低质量机械拉伸替代。
 
-### 4. 工程保存（底层语义）
+### 工程保存（底层语义）
 
 - 新增项目态模型：`project::ProjectState`。
 - 已支持序列化与反序列化：
   - `save_project_state(path, state)`
   - `load_project_state(path)`
-- 落盘格式已从文本迁移为 SQLite（schema v4，二进制 BLOB 存储）。
+- 落盘格式为 SQLite（schema v4，二进制 BLOB 存储）。
 - `Session` 已支持：
   - `capture_project_state(...)`
   - `restore_project_state(...)`
 
-### 5. 多轨与导入标准化（本轮完成）
+### 多轨与导入标准化（本轮完成）
 
 - `Session` 已升级为原生多轨：
   - `create_track / import_audio_as_new_track / import_audio_to_track`
@@ -61,12 +57,12 @@
   - 无 `solo` 时混所有 `!mute` 轨
   - 轨级 `gain_db` 作用于该轨混音前结果
 
-### 6. 稳定性修复
+### 稳定性修复
 
 - `standalone` 增加 `catch (...)` 兜底，避免未知异常导致不透明退出码。
 - 清理后全量重编译验证通过，CLI 链路可稳定完成渲染并输出文件。
 
-### 7. 渲染与导出（本轮完成）
+### 渲染与导出（本轮完成）
 
 - 连接组一次渲染已落地：RenderUnit 使用 `note_ids`，组内编辑音符合并调用后端，再按时间窗拆回 Blob 缓存。
 - 导出后端能力已落地（与 UI 解耦）：
@@ -114,7 +110,8 @@
 
 ## 下阶段优先级
 
-1. UI 接线：只读音符视图、选中联动、基础编辑工具闭环
+1. UI 接线：正式开始创建UI，完成只读音符视图、选中联动、基础编辑工具闭环
 2. 分割算法 v2：从“可用”提升到“接近 Melodyne 粒度”
 3. 编辑能力扩展：切分/合并/连接/断开、HandDraw 与 NoteBlob 同步
-4. 插件态策略：宿主时钟同步、后台渲染与缓存策略
+
+插件什么的以后再说，不急，先完成好眼下的任务
