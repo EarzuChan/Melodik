@@ -16,7 +16,7 @@ namespace melodick::project {
 
 namespace {
 
-constexpr int kSchemaVersion = 4;
+constexpr int kSchemaVersion = 6;
 
 [[noreturn]] void throw_sqlite_error(sqlite3* db, const std::string& where) {
     const char* msg = db ? sqlite3_errmsg(db) : "sqlite unavailable";
@@ -251,6 +251,9 @@ std::string require_meta_value(sqlite3* db, const std::string& key) {
 
 void create_schema(sqlite3* db) {
     exec_sql(db, "PRAGMA foreign_keys=ON;");
+    exec_sql(db, "DROP TABLE IF EXISTS blobs;");
+    exec_sql(db, "DROP TABLE IF EXISTS tracks;");
+    exec_sql(db, "DROP TABLE IF EXISTS meta;");
     exec_sql(db, "CREATE TABLE IF NOT EXISTS meta("
                  "key TEXT PRIMARY KEY,"
                  "value TEXT NOT NULL"
@@ -279,11 +282,10 @@ void create_schema(sqlite3* db) {
                  "edit_revision INTEGER NOT NULL,"
                  "link_prev INTEGER,"
                  "link_next INTEGER,"
-                 "source_mel_bins INTEGER NOT NULL,"
-                 "source_mel_frames INTEGER NOT NULL,"
                  "original_pitch_blob BLOB NOT NULL,"
+                 "source_f0_blob BLOB NOT NULL,"
+                 "source_voiced_blob BLOB NOT NULL,"
                  "source_audio_blob BLOB NOT NULL,"
-                 "source_mel_blob BLOB NOT NULL,"
                  "handdraw_patch_blob BLOB NOT NULL,"
                  "line_patches_blob BLOB NOT NULL,"
                  "PRIMARY KEY(track_id, id),"
@@ -327,11 +329,11 @@ void save_project_state(const std::string& path, const ProjectState& state) {
             "INSERT INTO blobs("
             "track_id, blob_index, id, start_seconds, end_seconds, original_start_seconds, original_duration_seconds,"
             "global_transpose_semitones, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
-            "source_mel_bins, source_mel_frames, original_pitch_blob, source_audio_blob, source_mel_blob, handdraw_patch_blob, line_patches_blob"
+            "original_pitch_blob, source_f0_blob, source_voiced_blob, source_audio_blob, handdraw_patch_blob, line_patches_blob"
             ") VALUES("
             "?1, ?2, ?3, ?4, ?5, ?6, ?7,"
             "?8, ?9, ?10, ?11, ?12, ?13, ?14,"
-            "?15, ?16, ?17, ?18, ?19, ?20, ?21"
+            "?15, ?16, ?17, ?18, ?19, ?20"
             ");"};
 
         for (std::size_t ti = 0; ti < state.tracks.size(); ++ti) {
@@ -371,19 +373,18 @@ void save_project_state(const std::string& path, const ProjectState& state) {
                 } else {
                     check_sqlite(sqlite3_bind_null(insert_blob.get(), 14), db.get(), "sqlite bind blob link_next null");
                 }
-                check_sqlite(sqlite3_bind_int(insert_blob.get(), 15, blob.source_mel_bins), db.get(), "sqlite bind mel bins");
-                check_sqlite(sqlite3_bind_int(insert_blob.get(), 16, blob.source_mel_frames), db.get(), "sqlite bind mel frames");
-
                 const auto original_pitch_blob = pack_pitch_slice(blob.original_pitch_curve);
+                const auto source_f0_blob = pack_float_vector(blob.source_f0_hz);
+                const auto source_voiced_blob = pack_float_vector(blob.source_voiced_probability);
                 const auto source_audio_blob = pack_float_vector(blob.source_audio_44k);
-                const auto source_mel_blob = pack_float_vector(blob.source_mel_log);
                 const auto handdraw_blob = pack_float_vector(blob.handdraw_patch_midi);
                 const auto lines_blob = pack_line_patches(blob.line_patches);
-                bind_blob(db.get(), insert_blob.get(), 17, original_pitch_blob);
+                bind_blob(db.get(), insert_blob.get(), 15, original_pitch_blob);
+                bind_blob(db.get(), insert_blob.get(), 16, source_f0_blob);
+                bind_blob(db.get(), insert_blob.get(), 17, source_voiced_blob);
                 bind_blob(db.get(), insert_blob.get(), 18, source_audio_blob);
-                bind_blob(db.get(), insert_blob.get(), 19, source_mel_blob);
-                bind_blob(db.get(), insert_blob.get(), 20, handdraw_blob);
-                bind_blob(db.get(), insert_blob.get(), 21, lines_blob);
+                bind_blob(db.get(), insert_blob.get(), 19, handdraw_blob);
+                bind_blob(db.get(), insert_blob.get(), 20, lines_blob);
                 check_sqlite(sqlite3_step(insert_blob.get()), db.get(), "sqlite insert blob");
             }
         }
@@ -415,7 +416,7 @@ ProjectState load_project_state(const std::string& path) {
         db.get(),
         "SELECT id, start_seconds, end_seconds, original_start_seconds, original_duration_seconds,"
         "global_transpose_semitones, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
-        "source_mel_bins, source_mel_frames, original_pitch_blob, source_audio_blob, source_mel_blob, handdraw_patch_blob, line_patches_blob "
+        "original_pitch_blob, source_f0_blob, source_voiced_blob, source_audio_blob, handdraw_patch_blob, line_patches_blob "
         "FROM blobs WHERE track_id=?1 ORDER BY blob_index ASC;"};
 
     while (sqlite3_step(select_tracks.get()) == SQLITE_ROW) {
@@ -448,13 +449,12 @@ ProjectState load_project_state(const std::string& path) {
             if (sqlite3_column_type(select_blobs.get(), 11) != SQLITE_NULL) {
                 blob.link_next = static_cast<std::int64_t>(sqlite3_column_int64(select_blobs.get(), 11));
             }
-            blob.source_mel_bins = sqlite3_column_int(select_blobs.get(), 12);
-            blob.source_mel_frames = sqlite3_column_int(select_blobs.get(), 13);
-            blob.original_pitch_curve = unpack_pitch_slice(read_blob_column(select_blobs.get(), 14));
+            blob.original_pitch_curve = unpack_pitch_slice(read_blob_column(select_blobs.get(), 12));
+            blob.source_f0_hz = unpack_float_vector(read_blob_column(select_blobs.get(), 13));
+            blob.source_voiced_probability = unpack_float_vector(read_blob_column(select_blobs.get(), 14));
             blob.source_audio_44k = unpack_float_vector(read_blob_column(select_blobs.get(), 15));
-            blob.source_mel_log = unpack_float_vector(read_blob_column(select_blobs.get(), 16));
-            blob.handdraw_patch_midi = unpack_float_vector(read_blob_column(select_blobs.get(), 17));
-            blob.line_patches = unpack_line_patches(read_blob_column(select_blobs.get(), 18));
+            blob.handdraw_patch_midi = unpack_float_vector(read_blob_column(select_blobs.get(), 16));
+            blob.line_patches = unpack_line_patches(read_blob_column(select_blobs.get(), 17));
             track.blobs.push_back(std::move(blob));
         }
 

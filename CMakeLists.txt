@@ -23,13 +23,18 @@ add_library(melodick_io
 target_include_directories(melodick_io PUBLIC include)
 target_link_libraries(melodick_io PUBLIC melodick_core)
 
-add_library(melodick_capabilities
-    src/capabilities/onnx_backends.cpp
+add_library(melodick_capabilities_core
     src/capabilities/segmenter.cpp
 )
-target_include_directories(melodick_capabilities PUBLIC include)
-target_link_libraries(melodick_capabilities PUBLIC melodick_core)
-target_compile_definitions(melodick_capabilities PRIVATE MELODICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(melodick_capabilities_core PUBLIC include)
+target_link_libraries(melodick_capabilities_core PUBLIC melodick_core)
+
+add_library(melodick_capabilities_onnx
+    src/capabilities/onnx_backends.cpp
+)
+target_include_directories(melodick_capabilities_onnx PUBLIC include)
+target_link_libraries(melodick_capabilities_onnx PUBLIC melodick_core melodick_capabilities_core)
+target_compile_definitions(melodick_capabilities_onnx PRIVATE MELODICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 if(MELODICK_ENABLE_ONNX)
     if(WIN32)
@@ -45,8 +50,8 @@ if(MELODICK_ENABLE_ONNX)
             message(FATAL_ERROR "onnxruntime headers not found in ${MELODICK_ONNXRUNTIME_INCLUDE_DIR}")
         endif()
 
-        target_include_directories(melodick_capabilities PUBLIC "${MELODICK_ONNXRUNTIME_INCLUDE_DIR}")
-        target_link_libraries(melodick_capabilities PUBLIC "${MELODICK_ONNXRUNTIME_LIB}")
+        target_include_directories(melodick_capabilities_onnx PUBLIC "${MELODICK_ONNXRUNTIME_INCLUDE_DIR}")
+        target_link_libraries(melodick_capabilities_onnx PUBLIC "${MELODICK_ONNXRUNTIME_LIB}")
     else()
         message(FATAL_ERROR "Current bootstrap ONNX integration supports Windows first.")
     endif()
@@ -65,7 +70,7 @@ add_library(melodick_app
     src/app/session.cpp
 )
 target_include_directories(melodick_app PUBLIC include)
-target_link_libraries(melodick_app PUBLIC melodick_core melodick_capabilities melodick_render melodick_io)
+target_link_libraries(melodick_app PUBLIC melodick_core melodick_capabilities_core melodick_render melodick_io)
 
 add_library(melodick_project
     src/project/project_state.cpp
@@ -83,12 +88,12 @@ if(MELODICK_BUILD_APP)
     add_executable(melodick_standalone_bootstrap
         src/app/standalone/main.cpp
     )
-    target_link_libraries(melodick_standalone_bootstrap PRIVATE melodick_app)
+    target_link_libraries(melodick_standalone_bootstrap PRIVATE melodick_app melodick_capabilities_onnx)
 
     add_executable(melodick_analysis_dump
         src/tools/analysis_dump_main.cpp
     )
-    target_link_libraries(melodick_analysis_dump PRIVATE melodick_capabilities melodick_io)
+    target_link_libraries(melodick_analysis_dump PRIVATE melodick_capabilities_onnx melodick_io)
     if(WIN32 AND MELODICK_ENABLE_ONNX)
         add_custom_command(TARGET melodick_standalone_bootstrap POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different

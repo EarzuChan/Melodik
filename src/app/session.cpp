@@ -47,8 +47,9 @@ std::vector<float> resample_linear_rate(const std::vector<float>& input, const i
     const std::size_t output_size =
         std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(static_cast<double>(input.size()) * ratio)));
     std::vector<float> output(output_size, 0.0f);
+    const double max_src_pos = static_cast<double>(input.size() - 1);
     for (std::size_t i = 0; i < output_size; ++i) {
-        const double src_pos = static_cast<double>(i) / ratio;
+        const double src_pos = std::clamp(static_cast<double>(i) / ratio, 0.0, max_src_pos);
         const auto idx0 = static_cast<std::size_t>(std::floor(src_pos));
         const auto idx1 = std::min<std::size_t>(idx0 + 1, input.size() - 1);
         const auto frac = static_cast<float>(src_pos - static_cast<double>(idx0));
@@ -683,9 +684,9 @@ void Session::restore_project_state(const project::ProjectState& state) {
             if (blob.edit_revision == 0) {
                 blob.edit_revision = 1;
             }
-            if (blob.source_mel_log.empty() && !blob.source_audio_44k.empty()) {
-                chain_.prepare_blob(blob, kSessionSampleRate);
-            }
+            blob.cached_source_mel_bins = 0;
+            blob.cached_source_mel_frames = 0;
+            blob.cached_source_mel_log.clear();
         }
         track.duration_seconds = saved.duration_seconds;
         track.render_units = planner_.plan(track.blobs);

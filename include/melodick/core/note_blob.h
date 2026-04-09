@@ -34,12 +34,14 @@ struct NoteBlob {
     double original_duration_seconds {0.0};
 
     PitchSlice original_pitch_curve {};
+    std::vector<float> source_f0_hz {};
+    std::vector<float> source_voiced_probability {};
     std::vector<float> handdraw_patch_midi {};
     std::vector<LinePatch> line_patches {};
     std::vector<float> source_audio_44k {};
-    std::vector<float> source_mel_log {};
-    int source_mel_bins {0};
-    int source_mel_frames {0};
+    std::vector<float> cached_source_mel_log {};
+    int cached_source_mel_bins {0};
+    int cached_source_mel_frames {0};
 
     double global_transpose_semitones {0.0};
     double time_ratio {1.0};
@@ -55,6 +57,9 @@ struct NoteBlob {
     [[nodiscard]] double duration() const { return time.length(); }
     [[nodiscard]] PitchSlice final_pitch_curve() const;
     [[nodiscard]] double final_display_pitch_midi() const;
+    [[nodiscard]] float sample_source_f0_hz(double u) const;
+    [[nodiscard]] float sample_source_voiced_probability(double u) const;
+    [[nodiscard]] double sample_pitch_delta_midi(double u) const;
     [[nodiscard]] bool is_unedited() const;
 };
 

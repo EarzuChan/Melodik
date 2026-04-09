@@ -9,7 +9,7 @@
 int main(int argc, char** argv) {
     try {
         if (argc < 3) {
-            std::cerr << "Usage: melodick_standalone_bootstrap <input.wav> <output.wav> [pitch_shift_semitones] [project_out.sqlite]\n";
+            std::cerr << "Usage: melodick_standalone_bootstrap <input.wav> <output.wav> [pitch_shift_semitones] [project_out.mds]\n";
             return 2;
         }
 
@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         if (!project_out.empty()) {
             const auto state = session.capture_project_state();
             melodick::project::save_project_state(project_out, state);
-            std::cout << "[stage] project sqlite written: " << project_out << std::endl;
+            std::cout << "[stage] project written: " << project_out << std::endl;
         }
 
         std::cout << "MeloDick real chain done. tracks=" << session.tracks().size()

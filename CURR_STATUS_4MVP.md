@@ -26,6 +26,9 @@
 - 脏区改为派生语义：通过 `NoteBlob.edit_revision` 与渲染缓存 revision 对比得到。
 - 未编辑直通：`is_unedited()` 为真时，直接复用原始音频片段，不走 vocoder。
 - 时值拉伸走重合成：拉伸后的 NoteBlob 必经重渲染，不做低质量机械拉伸替代。
+- HiFiGAN 输入 `uv` 已改为利用 RMVPE 的发声置信度链路，不再只靠 `f0 > 0` 粗暴二值化。
+- `NoteBlob` 已显式持有 `source_f0_hz + source_voiced_probability`，工程恢复后可直接重建源条件。
+- 单 Blob 且未改时值的重合成路径可复用运行期 mel 缓存，避免无意义重算。
 
 ### 工程保存（底层语义）
 
@@ -33,10 +36,11 @@
 - 已支持序列化与反序列化：
   - `save_project_state(path, state)`
   - `load_project_state(path)`
-- 落盘格式为 SQLite（schema v4，二进制 BLOB 存储）。
+- 落盘格式为 SQLite（schema v6，二进制 BLOB 存储）。
 - `Session` 已支持：
   - `capture_project_state(...)`
   - `restore_project_state(...)`
+- `source_mel` 已从工程真相中移除，改为运行期可丢弃缓存；工程恢复后按需重建。
 
 ### 多轨与导入标准化（本轮完成）
 

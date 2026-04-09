@@ -30,9 +30,9 @@ public:
 
     void prepare_blob(melodick::core::NoteBlob& note, int) override {
         ++prepare_calls;
-        note.source_mel_bins = 128;
-        note.source_mel_frames = static_cast<int>(std::max<std::size_t>(1, note.source_audio_44k.size() / 512));
-        note.source_mel_log.assign(static_cast<std::size_t>(note.source_mel_bins) * static_cast<std::size_t>(note.source_mel_frames), 0.0f);
+        note.cached_source_mel_bins = 128;
+        note.cached_source_mel_frames = static_cast<int>(std::max<std::size_t>(1, note.source_audio_44k.size() / 512));
+        note.cached_source_mel_log.assign(static_cast<std::size_t>(note.cached_source_mel_bins) * static_cast<std::size_t>(note.cached_source_mel_frames), 0.0f);
     }
 
     std::vector<float> render_group_audio(const std::vector<melodick::core::NoteBlob>& notes, int sample_rate) override {
@@ -79,6 +79,8 @@ MELODICK_TEST(session_multitrack_dirty_is_derived_and_lazy_render_converges) {
     MELODICK_EXPECT_TRUE(!session.track_dirty_timeline(track_2).dirty_ranges().empty());
 
     const auto blob_id = session.track_blobs(track_1).front().id;
+    MELODICK_EXPECT_TRUE(!session.track_blobs(track_1).front().source_f0_hz.empty());
+    MELODICK_EXPECT_TRUE(!session.track_blobs(track_1).front().source_voiced_probability.empty());
     session.shift_blob_pitch(track_1, blob_id, 1.0);
 
     const auto plans = session.plan_render_from(0.0, 8);
@@ -162,7 +164,7 @@ MELODICK_TEST(session_project_state_save_load_roundtrip) {
     session.set_track_solo(t1, true);
 
     const auto state = session.capture_project_state();
-    const std::string temp_path = "test_session_roundtrip.melodick.db";
+    const std::string temp_path = "test_session_roundtrip.mds";
     melodick::project::save_project_state(temp_path, state);
     const auto loaded = melodick::project::load_project_state(temp_path);
 
@@ -174,6 +176,9 @@ MELODICK_TEST(session_project_state_save_load_roundtrip) {
     MELODICK_EXPECT_EQ(restored.tracks().size(), session.tracks().size());
     MELODICK_EXPECT_EQ(restored.track_blobs(t1).size(), session.track_blobs(t1).size());
     MELODICK_EXPECT_TRUE(!restored.track_dirty_timeline(t1).dirty_ranges().empty());
+    MELODICK_EXPECT_EQ(restored.track_blobs(t1).front().source_f0_hz.size(), session.track_blobs(t1).front().source_f0_hz.size());
+    MELODICK_EXPECT_EQ(restored.track_blobs(t1).front().source_voiced_probability.size(), session.track_blobs(t1).front().source_voiced_probability.size());
+    MELODICK_EXPECT_TRUE(restored.track_blobs(t1).front().cached_source_mel_log.empty());
     (void)t2;
 
     std::remove(temp_path.c_str());

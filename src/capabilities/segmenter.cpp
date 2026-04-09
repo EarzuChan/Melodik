@@ -1,8 +1,20 @@
 #include "melodick/capabilities/segmenter.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <numeric>
+
+namespace {
+
+float midi_to_hz(const double midi) {
+    if (midi <= 0.0) {
+        return 0.0f;
+    }
+    return 440.0f * std::pow(2.0f, static_cast<float>((midi - 69.0) / 12.0));
+}
+
+} // namespace
 
 namespace melodick::capabilities {
 
@@ -40,23 +52,53 @@ std::vector<core::NoteBlob> NoteBlobSegmenter::build_segments(const core::PitchS
         note.original_start_seconds = start_time;
         note.original_duration_seconds = end_time - start_time;
         note.original_pitch_curve = original;
+        note.source_f0_hz.reserve(original.size());
+        note.source_voiced_probability.reserve(original.size());
+        for (const auto& point : original) {
+            note.source_f0_hz.push_back(point.voiced ? midi_to_hz(point.midi) : 0.0f);
+            note.source_voiced_probability.push_back(point.voiced ? std::clamp(point.confidence, 0.0f, 1.0f) : 0.0f);
+        }
         note.handdraw_patch_midi.assign(original.size(), std::numeric_limits<float>::quiet_NaN());
         note.global_transpose_semitones = 0.0;
         note.time_ratio = 1.0;
         notes.push_back(std::move(note));
     };
 
+    std::optional<std::size_t> unvoiced_run_start {};
+
     for (std::size_t i = 1; i < f0.size(); ++i) {
         const auto& prev = f0[i - 1];
         const auto& curr = f0[i];
 
-        const double dt = std::fabs(curr.seconds - prev.seconds);
-        const bool unvoiced_cut = (!prev.voiced || !curr.voiced) && dt > config_.max_unvoiced_gap_seconds;
         const bool pitch_cut = prev.voiced && curr.voiced && std::fabs(curr.midi - prev.midi) >= config_.pitch_jump_semitones;
 
-        if (unvoiced_cut || pitch_cut) {
+        if (!curr.voiced) {
+            if (!unvoiced_run_start.has_value()) {
+                unvoiced_run_start = i;
+            }
+        } else if (unvoiced_run_start.has_value()) {
+            const auto run_start = unvoiced_run_start.value();
+            const double unvoiced_duration = curr.seconds - f0[run_start].seconds;
+            if (unvoiced_duration >= config_.max_unvoiced_gap_seconds) {
+                flush_segment(segment_start, run_start - 1);
+                segment_start = i;
+            }
+            unvoiced_run_start.reset();
+        }
+
+        if (pitch_cut) {
             flush_segment(segment_start, i - 1);
             segment_start = i;
+            unvoiced_run_start.reset();
+        }
+    }
+
+    if (unvoiced_run_start.has_value()) {
+        const auto run_start = unvoiced_run_start.value();
+        const double trailing_unvoiced_duration = f0.back().seconds - f0[run_start].seconds;
+        if (trailing_unvoiced_duration >= config_.max_unvoiced_gap_seconds) {
+            flush_segment(segment_start, run_start - 1);
+            segment_start = f0.size();
         }
     }
 

@@ -31,13 +31,13 @@ inline int run_all() {
     for (const auto& test : registry()) {
         try {
             test.fn();
-            std::cout << "[PASS] " << test.name << '\n';
+            std::cout << "[PASS] " << test.name << '\n' << std::flush;
         } catch (const std::exception& ex) {
             ++failed;
-            std::cerr << "[FAIL] " << test.name << " : " << ex.what() << '\n';
+            std::cerr << "[FAIL] " << test.name << " : " << ex.what() << '\n' << std::flush;
         }
     }
-    std::cout << "total=" << registry().size() << " failed=" << failed << '\n';
+    std::cout << "total=" << registry().size() << " failed=" << failed << '\n' << std::flush;
     return failed == 0 ? 0 : 1;
 }
 

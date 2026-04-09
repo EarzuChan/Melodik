@@ -80,9 +80,10 @@ std::vector<float> resample_linear(const std::vector<float>& input, const int sr
     const double ratio = static_cast<double>(dst_rate) / static_cast<double>(src_rate);
     const std::size_t output_size = std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(input.size() * ratio)));
     std::vector output(output_size, 0.0f);
+    const double max_src_pos = static_cast<double>(input.size() - 1);
 
     for (std::size_t i = 0; i < output_size; ++i) {
-        const double src_pos = static_cast<double>(i) / ratio;
+        const double src_pos = std::clamp(static_cast<double>(i) / ratio, 0.0, max_src_pos);
         const auto idx0 = static_cast<std::size_t>(std::floor(src_pos));
         const auto idx1 = std::min<std::size_t>(idx0 + 1, input.size() - 1);
         const auto frac = static_cast<float>(src_pos - static_cast<double>(idx0));
@@ -156,6 +157,13 @@ struct MelResult {
     std::vector<float> mel; // [mel_bins, frames]
     std::size_t frames {0};
 };
+
+struct PitchTrackResult {
+    std::vector<float> f0_hz {};
+    std::vector<float> uv {};
+};
+
+void fill_small_f0_gaps(std::vector<float>& f0, std::size_t max_gap_frames);
 
 MelResult compute_log_mel(const std::vector<float>& audio, const int sample_rate) {
     if (audio.empty()) return {};
@@ -231,12 +239,22 @@ std::vector<core::PitchPoint> collect_group_pitch_points(const std::vector<core:
     return points;
 }
 
-std::vector<float> interpolate_points_f0_hz(
+float pitch_point_voiced_probability(const core::PitchPoint& point) {
+    if (!point.voiced) {
+        return 0.0f;
+    }
+    return std::clamp(point.confidence, 0.0f, 1.0f);
+}
+
+PitchTrackResult interpolate_points_pitch_track(
     const std::vector<core::PitchPoint>& points,
     const std::size_t frames,
     const double timeline_start_seconds,
-    const int sample_rate) {
-    std::vector<float> out(frames, 0.0f);
+    const int sample_rate,
+    const float uv_threshold) {
+    PitchTrackResult out {};
+    out.f0_hz.assign(frames, 0.0f);
+    out.uv.assign(frames, 0.0f);
     if (frames == 0 || points.empty()) {
         return out;
     }
@@ -250,33 +268,131 @@ std::vector<float> interpolate_points_f0_hz(
         }
 
         const auto& p0 = points[j];
-        if (!p0.voiced) {
-            out[i] = 0.0f;
-            continue;
-        }
+        const auto p0_uv = pitch_point_voiced_probability(p0);
 
         if (j + 1 >= points.size()) {
-            out[i] = midi_to_hz(static_cast<float>(p0.midi));
+            out.uv[i] = p0_uv;
+            if (p0.voiced) {
+                out.f0_hz[i] = midi_to_hz(static_cast<float>(p0.midi));
+            }
             continue;
         }
 
         const auto& p1 = points[j + 1];
-        if (!p1.voiced) {
-            out[i] = 0.0f;
-            continue;
-        }
+        const auto p1_uv = pitch_point_voiced_probability(p1);
 
         const double dt = p1.seconds - p0.seconds;
         if (dt <= 1.0e-9) {
-            out[i] = midi_to_hz(static_cast<float>(p0.midi));
+            out.uv[i] = p0_uv;
+            if (p0.voiced) {
+                out.f0_hz[i] = midi_to_hz(static_cast<float>(p0.midi));
+            }
             continue;
         }
 
         const float alpha = static_cast<float>((t - p0.seconds) / dt);
+        const auto clamped_alpha = std::clamp(alpha, 0.0f, 1.0f);
+        out.uv[i] = p0_uv + (p1_uv - p0_uv) * clamped_alpha;
+        if (!(p0.voiced && p1.voiced)) {
+            continue;
+        }
+
         const float midi = static_cast<float>(p0.midi)
-            + (static_cast<float>(p1.midi) - static_cast<float>(p0.midi)) * std::clamp(alpha, 0.0f, 1.0f);
-        out[i] = midi_to_hz(midi);
+            + (static_cast<float>(p1.midi) - static_cast<float>(p0.midi)) * clamped_alpha;
+        out.f0_hz[i] = midi_to_hz(midi);
     }
+
+    fill_small_f0_gaps(out.f0_hz, 8);
+    for (std::size_t i = 0; i < frames; ++i) {
+        if (out.f0_hz[i] <= 0.0f) {
+            out.uv[i] = 0.0f;
+            continue;
+        }
+        out.uv[i] = std::clamp(std::max(out.uv[i], uv_threshold), 0.0f, 1.0f);
+    }
+    return out;
+}
+
+PitchTrackResult assemble_group_source_pitch_track(
+    const std::vector<core::NoteBlob>& notes,
+    const std::size_t frames,
+    const double timeline_start_seconds,
+    const int sample_rate,
+    const float uv_threshold) {
+    PitchTrackResult out {};
+    out.f0_hz.assign(frames, 0.0f);
+    out.uv.assign(frames, 0.0f);
+    if (frames == 0) {
+        return out;
+    }
+
+    for (std::size_t i = 0; i < frames; ++i) {
+        const double t = timeline_start_seconds
+            + static_cast<double>(i * static_cast<std::size_t>(kVocoderHop)) / static_cast<double>(sample_rate);
+        float uv = 0.0f;
+        float f0_hz = 0.0f;
+        for (const auto& note : notes) {
+            const double duration = note.current_duration_seconds();
+            if (duration <= 0.0 || t < note.time.start_seconds || t > note.time.end_seconds) {
+                continue;
+            }
+
+            const double local_u = (t - note.time.start_seconds) / duration;
+            const auto note_uv = note.sample_source_voiced_probability(local_u);
+            uv = std::max(uv, note_uv);
+
+            const auto base_f0_hz = note.sample_source_f0_hz(local_u);
+            if (base_f0_hz <= 0.0f) {
+                continue;
+            }
+
+            const auto delta_midi = note.sample_pitch_delta_midi(local_u);
+            const auto scale = static_cast<float>(std::pow(2.0, delta_midi / 12.0));
+            f0_hz = std::max(f0_hz, base_f0_hz * scale);
+        }
+
+        out.f0_hz[i] = f0_hz;
+        out.uv[i] = std::clamp(uv, 0.0f, 1.0f);
+    }
+
+    fill_small_f0_gaps(out.f0_hz, 8);
+    for (std::size_t i = 0; i < frames; ++i) {
+        if (out.f0_hz[i] <= 0.0f) {
+            out.uv[i] = 0.0f;
+            continue;
+        }
+        out.uv[i] = std::clamp(std::max(out.uv[i], uv_threshold), 0.0f, 1.0f);
+    }
+
+    return out;
+}
+
+std::vector<float> assemble_group_source_uv(
+    const std::vector<core::NoteBlob>& notes,
+    const std::size_t frames,
+    const double timeline_start_seconds,
+    const int sample_rate) {
+    std::vector<float> out(frames, 0.0f);
+    if (frames == 0) {
+        return out;
+    }
+
+    for (std::size_t i = 0; i < frames; ++i) {
+        const double t = timeline_start_seconds
+            + static_cast<double>(i * static_cast<std::size_t>(kVocoderHop)) / static_cast<double>(sample_rate);
+        float uv = 0.0f;
+        for (const auto& note : notes) {
+            const double duration = note.current_duration_seconds();
+            if (duration <= 0.0 || t < note.time.start_seconds || t > note.time.end_seconds) {
+                continue;
+            }
+
+            const double local_u = (t - note.time.start_seconds) / duration;
+            uv = std::max(uv, note.sample_source_voiced_probability(local_u));
+        }
+        out[i] = std::clamp(uv, 0.0f, 1.0f);
+    }
+
     return out;
 }
 
@@ -354,6 +470,19 @@ void fill_small_f0_gaps(std::vector<float>& f0, const std::size_t max_gap_frames
             f0[gap_start + j] = std::pow(2.0f, log_left + (log_right - log_left) * t);
         }
     }
+}
+
+bool can_use_cached_note_mel(const core::NoteBlob& note, const std::vector<float>& source_model) {
+    if (note.cached_source_mel_bins != kMelBins || note.cached_source_mel_frames <= 0) {
+        return false;
+    }
+    if (note.cached_source_mel_log.size() != static_cast<std::size_t>(kMelBins) * static_cast<std::size_t>(note.cached_source_mel_frames)) {
+        return false;
+    }
+    if (source_model.size() != note.source_audio_44k.size()) {
+        return false;
+    }
+    return true;
 }
 
 std::vector<float> resample_to_length(const std::vector<float>& input, const std::size_t target_size) {
@@ -469,12 +598,17 @@ public:
             const float f0_hz = f0_data[i];
             const float uv = std::clamp(uv_data[i], 0.0f, 1.0f);
             const bool plausible_f0 = (f0_hz >= 40.0f) && (f0_hz <= 1400.0f);
-            const bool voiced = plausible_f0 && (!config_.enable_uv_check || (uv_is_unvoiced_probability ? (uv <= config_.uv_threshold) : (uv >= config_.uv_threshold)));
+            const float voiced_probability = plausible_f0
+                ? (uv_is_unvoiced_probability ? (1.0f - uv) : uv)
+                : 0.0f;
+            // Preserve the extractor's usable F0 whenever it is plausible. UV is carried alongside
+            // as an auxiliary confidence track and should not zero out the source pitch itself.
+            const bool voiced = plausible_f0;
             result.push_back(core::PitchPoint {
                 .seconds = static_cast<double>(i) * static_cast<double>(kRmvpeHop) / static_cast<double>(kRmvpeSampleRate),
                 .midi = voiced ? hz_to_midi(f0_hz) : 0.0,
                 .voiced = voiced,
-                .confidence = config_.enable_uv_check ? (uv_is_unvoiced_probability ? (1.0f - uv) : uv) : 1.0f,
+                .confidence = voiced_probability,
             });
         }
         return result;
@@ -540,17 +674,17 @@ public:
 
     void prepare_blob(core::NoteBlob& note, const int sample_rate) override {
         (void)sample_rate;
-        note.source_mel_bins = 0;
-        note.source_mel_frames = 0;
-        note.source_mel_log.clear();
+        note.cached_source_mel_bins = 0;
+        note.cached_source_mel_frames = 0;
+        note.cached_source_mel_log.clear();
         if (note.source_audio_44k.empty()) {
             return;
         }
 
         const auto mel = compute_log_mel(note.source_audio_44k, kModelSampleRate);
-        note.source_mel_bins = kMelBins;
-        note.source_mel_frames = static_cast<int>(mel.frames);
-        note.source_mel_log = mel.mel;
+        note.cached_source_mel_bins = kMelBins;
+        note.cached_source_mel_frames = static_cast<int>(mel.frames);
+        note.cached_source_mel_log = mel.mel;
     }
 
     std::vector<float> render_group_audio(const std::vector<core::NoteBlob>& notes, int sample_rate) override {
@@ -581,16 +715,25 @@ public:
             source_model = resample_to_length(source_model, model_target_samples);
         }
 
-        auto mel_result = compute_log_mel(source_model, kModelSampleRate);
+        MelResult mel_result {};
+        if (notes.size() == 1 && can_use_cached_note_mel(notes.front(), source_model)) {
+            mel_result.frames = static_cast<std::size_t>(notes.front().cached_source_mel_frames);
+            mel_result.mel = notes.front().cached_source_mel_log;
+        } else {
+            mel_result = compute_log_mel(source_model, kModelSampleRate);
+        }
         if (mel_result.frames == 0 || mel_result.mel.empty()) return {};
 
         const auto frames = mel_result.frames;
-        const auto points = collect_group_pitch_points(notes);
-        auto f0_hz = interpolate_points_f0_hz(points, frames, span.start_seconds, kModelSampleRate);
-        fill_small_f0_gaps(f0_hz, 8);
-        std::vector uv(frames, 0.0f);
-
-        for (std::size_t i = 0; i < frames; ++i) uv[i] = f0_hz[i] > 0.0f ? 1.0f : 0.0f;
+        const bool has_source_pitch = std::ranges::any_of(notes, [](const core::NoteBlob& note) {
+            return !note.source_f0_hz.empty();
+        });
+        const auto points = has_source_pitch ? std::vector<core::PitchPoint> {} : collect_group_pitch_points(notes);
+        const auto pitch_track = has_source_pitch
+            ? assemble_group_source_pitch_track(notes, frames, span.start_seconds, kModelSampleRate, config_.uv_threshold)
+            : interpolate_points_pitch_track(points, frames, span.start_seconds, kModelSampleRate, config_.uv_threshold);
+        const auto& f0_hz = pitch_track.f0_hz;
+        auto uv = pitch_track.uv;
 
         std::vector mel_tf(static_cast<std::size_t>(kMelBins) * frames, 0.0f);
         for (std::size_t t = 0; t < frames; ++t) for (int m = 0; m < kMelBins; ++m) mel_tf[t * static_cast<std::size_t>(kMelBins) + static_cast<std::size_t>(m)] = mel_result.mel[static_cast<std::size_t>(m) * frames + t];
@@ -731,6 +874,7 @@ BackendConfig default_backend_config() {
     const auto primary_hifigan = root / "models" / "hifigan.onnx";
     const auto fallback_hifigan = root / "pc_nsf_hifigan_44.1k_ONNX" / "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx";
     cfg.hifigan_model_path = std::filesystem::exists(primary_hifigan) ? primary_hifigan.string() : fallback_hifigan.string();
+    cfg.enable_uv_check = true;
     return cfg;
 }
 

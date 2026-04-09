@@ -34,6 +34,8 @@ MELODICK_TEST(project_state_roundtrip_keeps_blob_pipeline_data) {
         {.seconds = 0.2, .midi = 61.0, .voiced = true, .confidence = 1.0f},
         {.seconds = 0.5, .midi = 61.5, .voiced = true, .confidence = 1.0f},
     };
+    blob.source_f0_hz = {277.18f, 285.31f};
+    blob.source_voiced_probability = {0.9f, 0.8f};
     blob.handdraw_patch_midi = {
         std::numeric_limits<float>::quiet_NaN(),
         0.5f,
@@ -48,13 +50,13 @@ MELODICK_TEST(project_state_roundtrip_keeps_blob_pipeline_data) {
         },
     };
     blob.source_audio_44k = {0.1f, 0.2f, -0.1f};
-    blob.source_mel_bins = 128;
-    blob.source_mel_frames = 2;
-    blob.source_mel_log = {1.0f, 2.0f, 3.0f};
+    blob.cached_source_mel_bins = 128;
+    blob.cached_source_mel_frames = 2;
+    blob.cached_source_mel_log = {1.0f, 2.0f, 3.0f};
     track.blobs.push_back(blob);
     state.tracks.push_back(track);
 
-    const std::string temp_path = "test_project_roundtrip.melodick.db";
+    const std::string temp_path = "test_project_roundtrip.mds";
     melodick::project::save_project_state(temp_path, state);
     const auto loaded = melodick::project::load_project_state(temp_path);
 
@@ -65,10 +67,14 @@ MELODICK_TEST(project_state_roundtrip_keeps_blob_pipeline_data) {
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().id, state.tracks.front().blobs.front().id);
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().edit_revision, state.tracks.front().blobs.front().edit_revision);
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().original_pitch_curve.size(), state.tracks.front().blobs.front().original_pitch_curve.size());
+    MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().source_f0_hz.size(), state.tracks.front().blobs.front().source_f0_hz.size());
+    MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().source_voiced_probability.size(), state.tracks.front().blobs.front().source_voiced_probability.size());
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().handdraw_patch_midi.size(), state.tracks.front().blobs.front().handdraw_patch_midi.size());
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().line_patches.size(), state.tracks.front().blobs.front().line_patches.size());
     MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().source_audio_44k.size(), state.tracks.front().blobs.front().source_audio_44k.size());
-    MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().source_mel_log.size(), state.tracks.front().blobs.front().source_mel_log.size());
+    MELODICK_EXPECT_TRUE(loaded.tracks.front().blobs.front().cached_source_mel_log.empty());
+    MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().cached_source_mel_bins, 0);
+    MELODICK_EXPECT_EQ(loaded.tracks.front().blobs.front().cached_source_mel_frames, 0);
 
     std::remove(temp_path.c_str());
 }
