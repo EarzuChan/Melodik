@@ -257,7 +257,7 @@ MVP 阶段的 LineControl 限缩于 NoteBlob 内部。底层结构预留“跨 B
 ## 持久化与工程落地
 
 ### SQLite 单文件工程（Standalone 独占）
-Standalone 的定稿落盘格式为单 SQLite 文件，不生成附属的“Audio Folder”。
+Standalone 的定稿落盘格式为单 SQLite 文件，不生成附属的“Audio Folder”（全内联），扩展名为“MLDK”（MeLoDiK）。
 - **表结构**：包含 `schema_version`（版本控制门禁，用于未来的前后向兼容）、会话元数据表、轨道结构表。
 - **二进制 BLOB**：NoteBlob 私有的 `source_audio_44k`、`original_pitch_curve`、`source_f0_hz`、`source_voiced_probability` 以及编辑参数等必要资产以 BLOB 格式直接灌入数据库。像 `cached_source_mel_log` 这类可重建缓存不落盘。
 - **运行时隔离**：软件运行期间的撤销历史栈（Undo/Redo History）属于内存态，绝不允许被序列化存入数据库。工程关闭，历史清空。
