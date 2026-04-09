@@ -1,103 +1,80 @@
-# MeloDick 开发、构建与测试全指南
+# MeloDick 开发与维护全手册
 
-本指南涵盖了 MeloDick 项目的构建规范、操作流程以及多层级测试准则。
+## 1. 项目愿景与规范 (Simplified Dev Spec)
+本规范旨在提升交付稳定性，拒绝流程表演。
 
-## 1. 构建规范与配置
+### 1.1 分支与提交
+*   **分支策略**：主干开发，只使用 `main`。
+*   **提交节奏**：单次提交仅完成一个明确目标，确保可独立回滚。
+*   **提交门槛**：提交前必须确保：**能编译**、**核心自动化测试通过**、`standalone` 程序**可启动**。
+*   **管理原则**：**代码由管理员提交，而非 AI 提交**。主次分明，人是决策者。
+*   **信息格式**：必须使用前缀：`feat:` `fix:` `refactor:` `test:` `build:` `docs:`。
 
-### 1.1 构建预设（Presets）
-项目通过 `CMakePresets.json` 固化配置，以消除环境差异：
-- **开发构建**：`debug-dev`（包含调试符号，优化等级低）
-- **分发构建**：`release-prod`（开启全量优化，去除调试信息）
-
-### 1.2 版本标识
-- **版本格式**：建议采用 `YYYY.MMDD.gitsha`（例如：2026.0520.a1b2c3d）。
-- **自动化**：版本号应由构建脚本自动生成，严禁手工维护。
-
----
-
-## 2. 操作指南（快速开始）
-
-可以使用提供的 PowerShell 脚本或原生 CMake 命令进行操作。
-
-### 2.1 开发循环（Debug）
-```powershell
-# 方案 A：使用脚本（推荐）
-powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Preset debug-dev
-powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Preset debug-dev
-
-# 方案 B：使用原生 CMake
-cmake --preset debug-dev
-cmake --build --preset debug-dev
-ctest --preset debug-dev --output-on-failure
-```
-
-### 2.2 发布流水线（Release）
-```powershell
-# 1. 构建与测试
-powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1 -Preset release-prod
-powershell -ExecutionPolicy Bypass -File .\scripts\test.ps1 -Preset release-prod
-
-# 2. 打包分发
-powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1 -Preset release-prod
-```
+### 1.2 质量管控
+*   **回滚策略**：一旦写坏，果断回滚至上一个提交，不纠结。
+*   **变更边界**：
+    *   业务语义变更必须同步更新文档（`MELODICK_DESIGN.md`）。
+    *   未完成功能必须由开关保护，禁止破坏主流程。
+    *   外部依赖升级需注明理由、风险及回退方案。
 
 ---
 
-## 3. 测试规范
+## 2. 构建指南 (Build Guide)
+
+项目利用 `CMakePresets.json` 消除环境差异。
+
+### 2.1 构建预设
+*   **开发构建 (`debug-dev`)**：包含调试符号，适合日常开发。
+*   **分发构建 (`release-prod`)**：全量优化，用于性能测试与发布。
+
+### 2.2 常用命令 (PowerShell)
+| 任务 | 命令 |
+| :--- | :--- |
+| **Debug 构建** | `powershell -File .\scripts\build.ps1 -Preset debug-dev` |
+| **Debug 测试** | `powershell -File .\scripts\test.ps1 -Preset debug-dev` |
+| **Release 构建** | `powershell -File .\scripts\build.ps1 -Preset release-prod` |
+| **Release 测试** | `powershell -File .\scripts\test.ps1 -Preset release-prod` |
+| **打包分发** | `powershell -File .\scripts\package.ps1 -Preset release-prod` |
+
+---
+
+## 3. 测试规范 (Testing Standards)
 
 ### 3.1 测试原则
-- **关键链路优先**：优先覆盖高风险回归点，而非追求 100% 覆盖率。
-- **自动化优先**：听感验证作为 AI/DSP 结果的辅助，而非唯一标准。
-- **快速反馈**：确保能快速发现“破坏主链路”的破坏性变更。
+*   只测关键链路，自动化优先。
+*   听感验证作为 AI/DSP 结果的补充，不追求形式化堆量。
 
 ### 3.2 自动化测试层次
-
-#### T0：构建与冒烟
-确保代码在指定 Preset 下能编译通过并完成基础 CTest 扫描。
-
-#### T1：核心单元（Unit Tests）
-重点关注以下逻辑：
-- `NoteBlob`：移调、拉伸边界行为。
-- `NoteBlobSegmenter`：最小切分行为。
-- `RenderGroupPlanner`：连接音符组装逻辑。
-- `DirtyTimeline`：脏区标记与清理。
-- `LazyRenderScheduler`：按播放点调度脏区单元。
-
-#### T2：会话集成（Session Integration）
-验证全链路逻辑：`Session` 导入 -> 分析 -> 分割 -> 渲染规划 -> 懒渲染 -> 混音输出。包含工程态保存/恢复的 roundtrip 验证。
-
-#### T3：真实 ONNX 冒烟（Standalone 验证）
-手动验证或自动化脚本运行独立程序：
-```powershell
-# 格式：程序 输入文件 输出文件 移调半音 [模型路径/其他参数]
-.\build\debug-dev\melodick_standalone_bootstrap.exe .\samples\sample1.wav .\build\debug-dev\out.wav 2 .\build\debug-dev\sample1.mldk
-```
-**最小验收标准**：进程退出码为 0；输出 wav 存在且可播放；日志显示链路完整。
-
-#### T4：分析可视化回归（Analysis Regression）
-通过 Python 脚本验证分析算法的准确性：
-```powershell
-# 1. 导出数据
-.\build\debug-dev\melodick_analysis_dump.exe .\samples\sample1.wav .\build\debug-dev\analysis\sample1
-
-# 2. 绘图对比
-D:\Python\Python314\python.exe .\scripts\plot_analysis.py .\build\debug-dev\analysis\sample1 .\build\debug-dev\analysis\sample1_overlay.png
-```
-**最小验收标准**：生成 CSV/JSON 元数据；Overlay 图表中 F0 轨迹与切分点连续性符合预期。
+*   **T0 构建冒烟**：`ctest --preset debug-dev` 确保基础可用。
+*   **T1 核心单元**：
+    *   `NoteBlob`: 移调/拉伸边界行为。
+    *   `NoteBlobSegmenter`: 音符切分逻辑。
+    *   `DirtyTimeline` & `LazyRenderScheduler`: 脏区标记与调度。
+*   **T2 会话集成**：验证 `Session` 从导入、分析、渲染到混音输出的全生命周期。
+*   **T3 ONNX 链路冒烟**：
+    ```powershell
+    # 格式：程序 输入wav 输出wav 移调半音 [工程数据路径]
+    .\build\debug-dev\melodick_standalone_bootstrap.exe .\samples\sample1.wav .\build\debug-dev\out.wav 2 .\build\debug-dev\sample1.mldk
+    ```
+    *验收标准：退出码0、输出文件存在、日志链路完整。*
+*   **T4 分析可视化回归**：（这是检视处理过程是否正确的，若管理员未主动提出，则无需进行本检视）
+    通过 `melodick_analysis_dump.exe` 导出 CSV，利用 `plot_analysis.py` 绘制 Overlay 图表，对比 F0 连续性与切分准确度。
 
 ---
 
-## 4. 分发与交付
+## 4. 发布与分发规范 (Release Spec)
 
-### 4.1 分发包内容
-当前阶段提供 **Standalone 开发包**，包含：
-- `melodick_standalone_bootstrap` 可执行文件。
-- 运行所需依赖（ONNX 运行库、AI 模型文件等）。
-- 基础用户文档（README/使用说明）。
+### 4.1 版本标识
+*   **格式**：`YYYY.MMDD.gitsha`（由脚本自动化生成）。
 
-### 4.2 输入素材前提
-- **质量要求**：输入应为尽量干净的**干声**。
-- **处理边界**：当前引擎不负责去混响、降噪或去伴奏这些前处理。输入素材的信噪比直接影响输出质量。
+### 4.2 分发包内容（当前阶段：Standalone 冒烟可执行文件）
+1.  `melodick_standalone_bootstrap` 可执行文件。
+2.  必要的运行时依赖（AI 模型文件、DLL等）。
+3.  用户手册（后续补充）。
+
+### 4.3 输入素材前提
+*   **干声原则**：当前引擎默认输入为**干净的干声**。
+*   **边界**：引擎暂不负责去混响、降噪或去伴奏。输入质量直接决定输出质量。
 
 ---
-*更新时间：2026-04-10*
+*文档更新时间：2026-04-10*
