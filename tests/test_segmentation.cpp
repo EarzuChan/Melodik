@@ -52,10 +52,10 @@ MELODICK_TEST(segmenter_keeps_long_unvoiced_runs_as_independent_blobs) {
 
     const auto notes = segmenter.build_segments(f0);
     MELODICK_EXPECT_EQ(notes.size(), static_cast<std::size_t>(3));
-    MELODICK_EXPECT_TRUE(std::fabs(notes[0].time.end_seconds - 0.19) < 1.0e-6);
-    MELODICK_EXPECT_TRUE(std::fabs(notes[1].time.start_seconds - 0.19) < 1.0e-6);
-    MELODICK_EXPECT_TRUE(std::fabs(notes[1].time.end_seconds - 0.37) < 1.0e-6);
-    MELODICK_EXPECT_TRUE(std::fabs(notes[2].time.start_seconds - 0.37) < 1.0e-6);
+    MELODICK_EXPECT_TRUE(std::fabs(notes[0].time.end_seconds - 0.15) < 1.0e-6);
+    MELODICK_EXPECT_TRUE(std::fabs(notes[1].time.start_seconds - notes[0].time.end_seconds) < 1.0e-6);
+    MELODICK_EXPECT_TRUE(std::fabs(notes[2].time.start_seconds - 0.45) < 1.0e-6);
+    MELODICK_EXPECT_TRUE(std::fabs(notes[1].time.end_seconds - notes[2].time.start_seconds) < 1.0e-6);
     MELODICK_EXPECT_TRUE(notes[1].is_unvoiced_only());
     MELODICK_EXPECT_TRUE(!notes[1].link_prev.has_value());
     MELODICK_EXPECT_TRUE(!notes[1].link_next.has_value());

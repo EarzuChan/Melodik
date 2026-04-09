@@ -20,6 +20,7 @@
 
 - `melodick_core`
   - 核心数据结构：`NoteBlob`、`TimeRange`、`PitchSlice`。
+  - 音频基础能力：高质量波形重采样（windowed-sinc）。
 - `melodick_capabilities`
   - 能力域聚合模块，内部按能力子域组织：
   - F0 提取（RMVPE ONNX）
@@ -37,11 +38,14 @@
 ## 4. 核心语义
 
 - 编辑真相：音高线只属于 `NoteBlob`，轨道不再持有真相级 F0。
+- 采样语义分层：
+  - 波形音频重采样统一走高质量音频 SRC；
+  - `f0/uv/handdraw` 等控制轨继续走专用插值，不与音频 SRC 混用。
 - `NoteBlob` 统一顺序管线：
   - `original_pitch_curve`
   - `handdraw_patch_midi`（单实例，NaN 表示空值点）
   - `line_patches`（多实例：glide/vibrato/free）
-  - `global_transpose_semitones`
+  - `global_pitch_delta_midi`
   - `time_ratio`
   - `final_pitch_curve()`（派生，不落盘）
 - 脏区语义：由 `edit_revision` 与渲染缓存 revision 派生，不做手工维护真相。

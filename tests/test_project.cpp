@@ -23,7 +23,7 @@ MELODICK_TEST(project_state_roundtrip_keeps_blob_pipeline_data) {
     blob.time = {.start_seconds = 0.2, .end_seconds = 0.9};
     blob.original_start_seconds = 0.2;
     blob.original_duration_seconds = 0.6;
-    blob.global_transpose_semitones = 1.0;
+    blob.global_pitch_delta_midi = 1.0;
     blob.time_ratio = 1.2;
     blob.loudness_gain_db = -3.0;
     blob.detached = false;
@@ -56,7 +56,7 @@ MELODICK_TEST(project_state_roundtrip_keeps_blob_pipeline_data) {
     track.blobs.push_back(blob);
     state.tracks.push_back(track);
 
-    const std::string temp_path = "test_project_roundtrip.mds";
+    const std::string temp_path = "test_project_roundtrip.mldk";
     melodick::project::save_project_state(temp_path, state);
     const auto loaded = melodick::project::load_project_state(temp_path);
 

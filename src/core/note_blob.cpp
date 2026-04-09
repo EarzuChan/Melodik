@@ -113,7 +113,7 @@ bool NoteBlob::is_unedited() const {
     if (!nearly_equal(current_duration_seconds(), original_duration_seconds)) {
         return false;
     }
-    if (!nearly_equal(global_transpose_semitones, 0.0)) {
+    if (!nearly_equal(global_pitch_delta_midi, 0.0)) {
         return false;
     }
     if (!nearly_equal(time_ratio, 1.0)) {
@@ -183,7 +183,7 @@ float NoteBlob::sample_source_voiced_probability(const double u) const {
 
 double NoteBlob::sample_pitch_delta_midi(const double u) const {
     const auto clamped_u = std::clamp(u, 0.0, 1.0);
-    double delta = global_transpose_semitones;
+    double delta = global_pitch_delta_midi;
     if (!handdraw_patch_midi.empty()) {
         const auto handdraw = sample_track_linear(handdraw_patch_midi, clamped_u);
         if (std::isfinite(handdraw)) {
@@ -195,9 +195,9 @@ double NoteBlob::sample_pitch_delta_midi(const double u) const {
     }
     return delta;
 }
-
-void NoteBlobOps::shift_pitch(NoteBlob& note, double semitones) {
-    note.global_transpose_semitones += semitones;
+    
+void NoteBlobOps::apply_pitch_delta(NoteBlob& note, double delta_midi) {
+    note.global_pitch_delta_midi += delta_midi;
     touch(note);
 }
 
@@ -245,7 +245,7 @@ PitchSlice NoteBlob::final_pitch_curve() const {
         const auto& src = original_pitch_curve[i];
         const double u = point_u(*this, src, i, original_pitch_curve.size());
 
-        double delta = global_transpose_semitones;
+        double delta = global_pitch_delta_midi;
         if (i < handdraw_patch_midi.size() && std::isfinite(handdraw_patch_midi[i])) {
             delta += static_cast<double>(handdraw_patch_midi[i]);
         }

@@ -16,7 +16,7 @@ namespace melodick::project {
 
 namespace {
 
-constexpr int kSchemaVersion = 6;
+constexpr int kSchemaVersion = 7;
 
 [[noreturn]] void throw_sqlite_error(sqlite3* db, const std::string& where) {
     const char* msg = db ? sqlite3_errmsg(db) : "sqlite unavailable";
@@ -275,7 +275,7 @@ void create_schema(sqlite3* db) {
                  "end_seconds REAL NOT NULL,"
                  "original_start_seconds REAL NOT NULL,"
                  "original_duration_seconds REAL NOT NULL,"
-                 "global_transpose_semitones REAL NOT NULL,"
+                 "global_pitch_delta_midi REAL NOT NULL,"
                  "time_ratio REAL NOT NULL,"
                  "loudness_gain_db REAL NOT NULL,"
                  "detached INTEGER NOT NULL,"
@@ -328,7 +328,7 @@ void save_project_state(const std::string& path, const ProjectState& state) {
             db.get(),
             "INSERT INTO blobs("
             "track_id, blob_index, id, start_seconds, end_seconds, original_start_seconds, original_duration_seconds,"
-            "global_transpose_semitones, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
+            "global_pitch_delta_midi, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
             "original_pitch_blob, source_f0_blob, source_voiced_blob, source_audio_blob, handdraw_patch_blob, line_patches_blob"
             ") VALUES("
             "?1, ?2, ?3, ?4, ?5, ?6, ?7,"
@@ -358,7 +358,7 @@ void save_project_state(const std::string& path, const ProjectState& state) {
                 check_sqlite(sqlite3_bind_double(insert_blob.get(), 5, blob.time.end_seconds), db.get(), "sqlite bind blob end");
                 check_sqlite(sqlite3_bind_double(insert_blob.get(), 6, blob.original_start_seconds), db.get(), "sqlite bind blob original start");
                 check_sqlite(sqlite3_bind_double(insert_blob.get(), 7, blob.original_duration_seconds), db.get(), "sqlite bind blob original duration");
-                check_sqlite(sqlite3_bind_double(insert_blob.get(), 8, blob.global_transpose_semitones), db.get(), "sqlite bind blob transpose");
+                check_sqlite(sqlite3_bind_double(insert_blob.get(), 8, blob.global_pitch_delta_midi), db.get(), "sqlite bind blob pitch delta");
                 check_sqlite(sqlite3_bind_double(insert_blob.get(), 9, blob.time_ratio), db.get(), "sqlite bind blob ratio");
                 check_sqlite(sqlite3_bind_double(insert_blob.get(), 10, blob.loudness_gain_db), db.get(), "sqlite bind blob loudness");
                 check_sqlite(sqlite3_bind_int(insert_blob.get(), 11, blob.detached ? 1 : 0), db.get(), "sqlite bind blob detached");
@@ -415,7 +415,7 @@ ProjectState load_project_state(const std::string& path) {
     Stmt select_blobs {
         db.get(),
         "SELECT id, start_seconds, end_seconds, original_start_seconds, original_duration_seconds,"
-        "global_transpose_semitones, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
+        "global_pitch_delta_midi, time_ratio, loudness_gain_db, detached, edit_revision, link_prev, link_next,"
         "original_pitch_blob, source_f0_blob, source_voiced_blob, source_audio_blob, handdraw_patch_blob, line_patches_blob "
         "FROM blobs WHERE track_id=?1 ORDER BY blob_index ASC;"};
 
@@ -438,7 +438,7 @@ ProjectState load_project_state(const std::string& path) {
             blob.time.end_seconds = sqlite3_column_double(select_blobs.get(), 2);
             blob.original_start_seconds = sqlite3_column_double(select_blobs.get(), 3);
             blob.original_duration_seconds = sqlite3_column_double(select_blobs.get(), 4);
-            blob.global_transpose_semitones = sqlite3_column_double(select_blobs.get(), 5);
+            blob.global_pitch_delta_midi = sqlite3_column_double(select_blobs.get(), 5);
             blob.time_ratio = sqlite3_column_double(select_blobs.get(), 6);
             blob.loudness_gain_db = sqlite3_column_double(select_blobs.get(), 7);
             blob.detached = sqlite3_column_int(select_blobs.get(), 8) != 0;

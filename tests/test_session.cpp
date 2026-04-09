@@ -95,7 +95,7 @@ MELODICK_TEST(session_multitrack_dirty_is_derived_and_lazy_render_converges) {
     const auto blob_id = session.track_blobs(track_1).front().id;
     MELODICK_EXPECT_TRUE(!session.track_blobs(track_1).front().source_f0_hz.empty());
     MELODICK_EXPECT_TRUE(!session.track_blobs(track_1).front().source_voiced_probability.empty());
-    session.shift_blob_pitch(track_1, blob_id, 1.0);
+    session.apply_blob_pitch_delta(track_1, blob_id, 1.0);
 
     const auto plans = session.plan_render_from(0.0, 8);
     MELODICK_EXPECT_TRUE(!plans.empty());
@@ -200,11 +200,11 @@ MELODICK_TEST(session_project_state_save_load_roundtrip) {
     const auto stereo_48k = make_stereo_constant(48000, 0.05f, 0.15f);
     const auto t2 = session.import_audio_as_new_track(stereo_48k, 48000, 2, "Back");
 
-    session.shift_blob_pitch(t1, session.track_blobs(t1).front().id, 2.0);
+    session.apply_blob_pitch_delta(t1, session.track_blobs(t1).front().id, 2.0);
     session.set_track_solo(t1, true);
 
     const auto state = session.capture_project_state();
-    const std::string temp_path = "test_session_roundtrip.mds";
+    const std::string temp_path = "test_session_roundtrip.mldk";
     melodick::project::save_project_state(temp_path, state);
     const auto loaded = melodick::project::load_project_state(temp_path);
 

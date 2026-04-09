@@ -13,6 +13,7 @@ set(MELODICK_OLD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../MelodickOld" CACHE PATH "P
 set(MELODICK_ONNXRUNTIME_ROOT "${MELODICK_OLD_ROOT}/onnxruntime-win-x64-1.24.4" CACHE PATH "Path to ONNX Runtime root")
 
 add_library(melodick_core
+    src/core/audio_resampler.cpp
     src/core/note_blob.cpp
 )
 target_include_directories(melodick_core PUBLIC include)
@@ -112,6 +113,7 @@ if(MELODICK_BUILD_TESTS)
 
     add_executable(melodick_tests
         tests/test_main.cpp
+        tests/test_audio_resampler.cpp
         tests/test_note_blob.cpp
         tests/test_segmentation.cpp
         tests/test_render.cpp

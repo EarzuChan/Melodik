@@ -91,7 +91,7 @@ public:
     void set_track_solo(std::int64_t track_id, bool solo);
     void set_track_gain_db(std::int64_t track_id, double gain_db);
 
-    void shift_blob_pitch(std::int64_t track_id, std::int64_t blob_id, double semitones);
+    void apply_blob_pitch_delta(std::int64_t track_id, std::int64_t blob_id, double delta_midi);
     void stretch_blob_time(std::int64_t track_id, std::int64_t blob_id, double new_duration_seconds);
 
     [[nodiscard]] std::vector<TrackRenderPlan> plan_render_from(double playhead_seconds, std::size_t budget_units_per_track) const;

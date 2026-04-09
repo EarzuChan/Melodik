@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
+#include "melodick/core/audio_resampler.h"
 #include "melodick/io/wav_io.h"
 
 namespace melodick::app {
@@ -30,32 +31,12 @@ namespace melodick::app {
             return mono;
         }
 
-        std::vector<float> resample_linear_rate(const std::vector<float>& input, const int src_rate, const int dst_rate) {
-            if (src_rate <= 0 || dst_rate <= 0) throw std::invalid_argument("invalid sample rate");
-            if (input.empty() || src_rate == dst_rate) return input;
-
-            const double ratio = static_cast<double>(dst_rate) / static_cast<double>(src_rate);
-            const std::size_t output_size = std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(static_cast<double>(input.size()) * ratio)));
-            std::vector output(output_size, 0.0f);
-            const double max_src_pos = static_cast<double>(input.size() - 1);
-
-            for (std::size_t i = 0; i < output_size; ++i) {
-                const double src_pos = std::clamp(static_cast<double>(i) / ratio, 0.0, max_src_pos);
-                const auto idx0 = static_cast<std::size_t>(std::floor(src_pos));
-                const auto idx1 = std::min<std::size_t>(idx0 + 1, input.size() - 1);
-                const auto frac = static_cast<float>(src_pos - static_cast<double>(idx0));
-                output[i] = input[idx0] * (1.0f - frac) + input[idx1] * frac;
-            }
-
-            return output;
-        }
-
         std::vector<float> normalize_to_session_audio(const std::vector<float>& interleaved_samples, const int sample_rate, const int channels) {
             if (sample_rate <= 0) throw std::invalid_argument("sample_rate must be positive");
             if (channels <= 0) throw std::invalid_argument("channels must be positive");
 
             auto mono = downmix_interleaved_to_mono(interleaved_samples, channels);
-            return sample_rate == kSessionSampleRate ? mono : resample_linear_rate(mono, sample_rate, kSessionSampleRate);
+            return sample_rate == kSessionSampleRate ? mono : core::resample_audio_rate(mono, sample_rate, kSessionSampleRate);
         }
 
         std::vector<float> slice_audio_range(const std::vector<float>& mono_samples, const int sample_rate, const core::TimeRange& range) {
@@ -67,26 +48,6 @@ namespace melodick::app {
             const auto clamped_end = std::min<std::size_t>(end, mono_samples.size());
             if (clamped_end <= start) { return {}; }
             return std::vector(mono_samples.begin() + static_cast<std::ptrdiff_t>(start),mono_samples.begin() + static_cast<std::ptrdiff_t>(clamped_end));
-        }
-
-        std::vector<float> resample_linear_to_size(const std::vector<float>& input, const std::size_t target_size) {
-            if (target_size == 0) { return {}; }
-            if (input.empty()) { return std::vector<float>(target_size, 0.0f); }
-            if (input.size() == target_size) { return input; }
-            if (target_size == 1) { return {input.front()}; }
-
-            std::vector out(target_size, 0.0f);
-            const double scale = static_cast<double>(input.size() - 1) / static_cast<double>(target_size - 1);
-
-            for (std::size_t i = 0; i < target_size; ++i) {
-                const double pos = static_cast<double>(i) * scale;
-                const auto i0 = static_cast<std::size_t>(std::floor(pos));
-                const auto i1 = std::min<std::size_t>(i0 + 1, input.size() - 1);
-                const auto frac = static_cast<float>(pos - static_cast<double>(i0));
-                out[i] = input[i0] * (1.0f - frac) + input[i1] * frac;
-            }
-
-            return out;
         }
 
         std::vector<float> extract_with_offset(const std::vector<float>& input, const std::size_t offset_samples, const std::size_t target_samples) {
@@ -283,12 +244,12 @@ namespace melodick::app {
         track->mix.gain_db = gain_db;
     }
 
-    void Session::shift_blob_pitch(const std::int64_t track_id, const std::int64_t blob_id, const double semitones) {
+    void Session::apply_blob_pitch_delta(const std::int64_t track_id, const std::int64_t blob_id, const double delta_midi) {
         auto* track = find_track(track_id);
         if (!track) { throw std::invalid_argument("track_id does not exist"); }
         auto* blob = find_blob(*track, blob_id);
         if (!blob) { return; }
-        core::NoteBlobOps::shift_pitch(*blob, semitones);
+        core::NoteBlobOps::apply_pitch_delta(*blob, delta_midi);
         track->render_units = planner_.plan(track->blobs);
         refresh_derived_dirty(*track);
     }
@@ -357,7 +318,7 @@ namespace melodick::app {
                         const auto target_samples = static_cast<std::size_t>(
                             std::max(0.0, live_blob->duration()) * static_cast<double>(kSessionSampleRate));
                         auto rendered = live_blob->source_audio_44k;
-                        if (target_samples > 0 && rendered.size() != target_samples) { rendered = resample_linear_to_size(rendered, target_samples); }
+                        if (target_samples > 0 && rendered.size() != target_samples) { rendered = core::resample_audio_to_size(rendered, target_samples); }
                         if (live_blob->is_unvoiced_only()) { apply_edge_fade(rendered, kSessionSampleRate, kUnvoicedBlobFadeSeconds); }
                         apply_gain_db(rendered, live_blob->loudness_gain_db);
                         track->rendered_blob_cache[live_blob->id] = RenderedBlobCache{
@@ -471,7 +432,7 @@ namespace melodick::app {
         auto convert_for_export = [&](const std::vector<float>& mono_44k) {
             const auto mono_target = request.format.sample_rate == kSessionSampleRate
                                          ? mono_44k
-                                         : resample_linear_rate(mono_44k, kSessionSampleRate, request.format.sample_rate);
+                                         : core::resample_audio_rate(mono_44k, kSessionSampleRate, request.format.sample_rate);
             return mono_to_interleaved_channels(mono_target, request.format.channels);
         };
 

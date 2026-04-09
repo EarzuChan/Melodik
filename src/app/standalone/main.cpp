@@ -9,13 +9,13 @@
 int main(int argc, char** argv) {
     try {
         if (argc < 3) {
-            std::cerr << "Usage: melodick_standalone_bootstrap <input.wav> <output.wav> [pitch_shift_semitones] [project_out.mds]\n";
+            std::cerr << "Usage: melodick_standalone_bootstrap <input.wav> <output.wav> [pitch_delta_midi] [project_out.mldk]\n";
             return 2;
         }
 
         const std::string input_path = argv[1];
         const std::string output_path = argv[2];
-        const double semitones = (argc >= 4) ? std::stod(argv[3]) : 0.0;
+        const double pitch_delta_midi = (argc >= 4) ? std::stod(argv[3]) : 0.0;
         const std::string project_out = (argc >= 5) ? argv[4] : "";
 
         auto config = melodick::capabilities::default_backend_config();
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
         std::cout << "[stage] imported and analyzed. track=" << track_id << " blobs=" << blobs.size() << std::endl;
         if (!blobs.empty()) std::cout << "[stage] first_blob_unedited=" << (blobs.front().is_unedited() ? 1 : 0) << std::endl;
 
-        if (semitones != 0.0) for (const auto& blob : blobs) session.shift_blob_pitch(track_id, blob.id, semitones);
+        if (pitch_delta_midi != 0.0) for (const auto& blob : blobs) session.apply_blob_pitch_delta(track_id, blob.id, pitch_delta_midi);
 
         session.render_all_dirty(64);
         std::cout << "[stage] render complete" << std::endl;
@@ -44,9 +44,7 @@ int main(int argc, char** argv) {
             std::cout << "[stage] project written: " << project_out << std::endl;
         }
 
-        std::cout << "MeloDick real chain done. tracks=" << session.tracks().size()
-                  << " duration=" << session.duration_seconds()
-                  << "s output=" << output_path << '\n';
+        std::cout << "MeloDick real chain done. tracks=" << session.tracks().size() << " duration=" << session.duration_seconds() << "s output=" << output_path << '\n';
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "MeloDick bootstrap failed: " << ex.what() << '\n';

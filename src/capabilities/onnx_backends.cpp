@@ -13,6 +13,8 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#include "melodick/core/audio_resampler.h"
+
 namespace melodick::capabilities {
 
 namespace {
@@ -71,25 +73,6 @@ int reflect_index(int i, const int n) {
     }
 
     return i;
-}
-
-std::vector<float> resample_linear(const std::vector<float>& input, const int src_rate, const int dst_rate) {
-    if (src_rate <= 0 || dst_rate <= 0) throw std::invalid_argument("invalid sample rate");
-    if (input.empty() || src_rate == dst_rate) return input;
-
-    const double ratio = static_cast<double>(dst_rate) / static_cast<double>(src_rate);
-    const std::size_t output_size = std::max<std::size_t>(1, static_cast<std::size_t>(std::llround(input.size() * ratio)));
-    std::vector output(output_size, 0.0f);
-    const double max_src_pos = static_cast<double>(input.size() - 1);
-
-    for (std::size_t i = 0; i < output_size; ++i) {
-        const double src_pos = std::clamp(static_cast<double>(i) / ratio, 0.0, max_src_pos);
-        const auto idx0 = static_cast<std::size_t>(std::floor(src_pos));
-        const auto idx1 = std::min<std::size_t>(idx0 + 1, input.size() - 1);
-        const auto frac = static_cast<float>(src_pos - static_cast<double>(idx0));
-        output[i] = input[idx0] * (1.0f - frac) + input[idx1] * frac;
-    }
-    return output;
 }
 
 void fft_inplace(std::vector<std::complex<float>>& a) {
@@ -427,7 +410,7 @@ std::vector<float> assemble_group_source_audio(
         }
         const auto source = sample_rate == kModelSampleRate
             ? note.source_audio_44k
-            : resample_linear(note.source_audio_44k, kModelSampleRate, sample_rate);
+            : core::resample_audio_rate(note.source_audio_44k, kModelSampleRate, sample_rate);
 
         const auto offset = static_cast<std::size_t>(
             std::max(0.0, note.time.start_seconds - span.start_seconds) * static_cast<double>(sample_rate));
@@ -485,24 +468,6 @@ bool can_use_cached_note_mel(const core::NoteBlob& note, const std::vector<float
     return true;
 }
 
-std::vector<float> resample_to_length(const std::vector<float>& input, const std::size_t target_size) {
-    if (target_size == 0) return {};
-    if (input.empty()) return std::vector(target_size, 0.0f);
-    if (input.size() == target_size) return input;
-    if (target_size == 1) return {input.front()};
-
-    std::vector out(target_size, 0.0f);
-    const double scale = static_cast<double>(input.size() - 1) / static_cast<double>(target_size - 1);
-    for (std::size_t i = 0; i < target_size; ++i) {
-        const double pos = static_cast<double>(i) * scale;
-        const auto i0 = static_cast<std::size_t>(std::floor(pos));
-        const auto i1 = std::min<std::size_t>(i0 + 1, input.size() - 1);
-        const auto frac = static_cast<float>(pos - static_cast<double>(i0));
-        out[i] = input[i0] * (1.0f - frac) + input[i1] * frac;
-    }
-    return out;
-}
-
 class OnnxPitchExtractor final : public IPitchExtractor {
 public:
     explicit OnnxPitchExtractor(BackendConfig config)
@@ -541,7 +506,7 @@ public:
         if (mono_samples.empty()) return {};
         if (sample_rate <= 0) throw std::invalid_argument("sample_rate must be positive");
 
-        auto audio_16k = resample_linear(mono_samples, sample_rate, kRmvpeSampleRate);
+        auto audio_16k = core::resample_audio_rate(mono_samples, sample_rate, kRmvpeSampleRate);
         const std::vector waveform_shape {1, static_cast<int64_t>(audio_16k.size())};
 
         auto waveform = Ort::Value::CreateTensor<float>(
@@ -705,14 +670,14 @@ public:
 
         auto source_model = sample_rate == kModelSampleRate
             ? source_group
-            : resample_linear(source_group, sample_rate, kModelSampleRate);
+            : core::resample_audio_rate(source_group, sample_rate, kModelSampleRate);
         if (source_model.empty()) {
             return std::vector<float>(target_samples, 0.0f);
         }
         if (const auto model_target_samples = static_cast<std::size_t>(
                 std::max(0.0, span.end_seconds - span.start_seconds) * static_cast<double>(kModelSampleRate));
             model_target_samples > 0 && source_model.size() != model_target_samples) {
-            source_model = resample_to_length(source_model, model_target_samples);
+            source_model = core::resample_audio_to_size(source_model, model_target_samples);
         }
 
         MelResult mel_result {};
@@ -841,11 +806,11 @@ public:
         const auto* data = out[0].GetTensorData<float>();
         std::vector rendered_model(data, data + count);
         if (sample_rate == kModelSampleRate) {
-            return resample_to_length(rendered_model, target_samples);
+            return core::resample_audio_to_size(rendered_model, target_samples);
         }
 
-        auto rendered_target = resample_linear(rendered_model, kModelSampleRate, sample_rate);
-        return resample_to_length(rendered_target, target_samples);
+        auto rendered_target = core::resample_audio_rate(rendered_model, kModelSampleRate, sample_rate);
+        return core::resample_audio_to_size(rendered_target, target_samples);
     }
 
 private:

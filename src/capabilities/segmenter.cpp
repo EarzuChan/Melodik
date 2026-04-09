@@ -246,7 +246,7 @@ std::vector<core::NoteBlob> NoteBlobSegmenter::build_segments(const core::PitchS
             note.source_voiced_probability.push_back(point.voiced ? std::clamp(point.confidence, 0.0f, 1.0f) : 0.0f);
         }
         note.handdraw_patch_midi.assign(original.size(), std::numeric_limits<float>::quiet_NaN());
-        note.global_transpose_semitones = 0.0;
+    note.global_pitch_delta_midi = 0.0;
         note.time_ratio = 1.0;
         // TODO(after MVP): split render span and pitched core span so GUI can show partial-unvoiced
         // note heads like Melodyne instead of treating short lead-ins as part of the visible note body.
@@ -285,7 +285,7 @@ std::vector<core::NoteBlob> NoteBlobSegmenter::build_segments(const core::PitchS
         for (std::size_t i = run.start_index + 1; i <= run.end_index; ++i) {
             const auto& prev = f0[i - 1];
             const auto& curr = f0[i];
-            const bool pitch_cut = std::fabs(curr.midi - prev.midi) >= config_.pitch_jump_semitones;
+            const bool pitch_cut = std::fabs(curr.midi - prev.midi) >= config_.pitch_split_threshold_midi;
             if (!pitch_cut) {
                 continue;
             }

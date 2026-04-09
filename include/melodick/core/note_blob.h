@@ -36,14 +36,14 @@ struct NoteBlob {
     PitchSlice original_pitch_curve {};
     std::vector<float> source_f0_hz {};
     std::vector<float> source_voiced_probability {};
-    std::vector<float> handdraw_patch_midi {};
-    std::vector<LinePatch> line_patches {};
+    std::vector<float> handdraw_patch_midi {}; // 手绘Patch，NaN代表该点无手绘
+    std::vector<LinePatch> line_patches {}; // 多个线条Patch实例
     std::vector<float> source_audio_44k {};
     std::vector<float> cached_source_mel_log {};
     int cached_source_mel_bins {0};
     int cached_source_mel_frames {0};
 
-    double global_transpose_semitones {0.0};
+    double global_pitch_delta_midi {0.0}; // 整数是半音
     double time_ratio {1.0};
     double loudness_gain_db {0.0};
 
@@ -67,7 +67,7 @@ struct NoteBlob {
 
 class NoteBlobOps {
 public:
-    static void shift_pitch(NoteBlob& note, double semitones);
+    static void apply_pitch_delta(NoteBlob& note, double delta_midi);
     static void stretch_time(NoteBlob& note, double new_duration_seconds);
     static void move_start(NoteBlob& note, double new_start_seconds);
     static void touch(NoteBlob& note);
