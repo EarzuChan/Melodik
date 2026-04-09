@@ -8,7 +8,9 @@ namespace melodick::capabilities {
 
 struct SegmenterConfig {
     double min_note_seconds {0.08};
-    double max_unvoiced_gap_seconds {0.03};
+    double max_leading_unvoiced_seconds {0.12}; // 合并前辅音音头
+    double long_unvoiced_prefix_to_prev_seconds {0.03}; // 音尾送返
+    double long_unvoiced_suffix_to_next_seconds {0.06}; // 音头送去
     double pitch_jump_semitones {2.8};
 };
 

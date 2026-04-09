@@ -88,6 +88,24 @@ void NoteBlobOps::touch(NoteBlob& note) {
     ++note.edit_revision;
 }
 
+bool NoteBlob::has_voiced_content() const {
+    for (const auto& point : original_pitch_curve) {
+        if (point.voiced) {
+            return true;
+        }
+    }
+    for (const auto hz : source_f0_hz) {
+        if (hz > 0.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool NoteBlob::is_unvoiced_only() const {
+    return !original_pitch_curve.empty() && !has_voiced_content();
+}
+
 bool NoteBlob::is_unedited() const {
     if (!nearly_equal(time.start_seconds, original_start_seconds)) {
         return false;

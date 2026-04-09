@@ -60,6 +60,8 @@ struct NoteBlob {
     [[nodiscard]] float sample_source_f0_hz(double u) const;
     [[nodiscard]] float sample_source_voiced_probability(double u) const;
     [[nodiscard]] double sample_pitch_delta_midi(double u) const;
+    [[nodiscard]] bool has_voiced_content() const;
+    [[nodiscard]] bool is_unvoiced_only() const;
     [[nodiscard]] bool is_unedited() const;
 };
 

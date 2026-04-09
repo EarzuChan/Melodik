@@ -139,7 +139,7 @@ private:
     [[nodiscard]] const TrackState* find_track(std::int64_t track_id) const;
     [[nodiscard]] core::NoteBlob* find_blob(TrackState& track, std::int64_t blob_id);
     [[nodiscard]] const core::NoteBlob* find_blob(const TrackState& track, std::int64_t blob_id) const;
-    void refresh_derived_dirty(TrackState& track);
+    void refresh_derived_dirty(TrackState& track) const;
     [[nodiscard]] bool is_unit_dirty(const TrackState& track, const render::RenderUnit& unit) const;
     [[nodiscard]] bool is_track_active_in_mix(const TrackState& track) const;
 };

@@ -23,6 +23,20 @@ public:
     }
 };
 
+class FakePitchExtractorWithLongUnvoiced final : public melodick::capabilities::IPitchExtractor {
+public:
+    melodick::core::PitchSlice extract_f0(const std::vector<float>&, int) override {
+        return {
+            {.seconds = 0.0, .midi = 60.0, .voiced = true, .confidence = 1.0f},
+            {.seconds = 0.2, .midi = 60.0, .voiced = true, .confidence = 1.0f},
+            {.seconds = 0.4, .midi = 0.0, .voiced = false, .confidence = 0.0f},
+            {.seconds = 0.6, .midi = 0.0, .voiced = false, .confidence = 0.0f},
+            {.seconds = 0.8, .midi = 64.0, .voiced = true, .confidence = 1.0f},
+            {.seconds = 1.0, .midi = 64.0, .voiced = true, .confidence = 1.0f},
+        };
+    }
+};
+
 class FakeVocoder final : public melodick::capabilities::IVocoder {
 public:
     std::size_t render_calls {0};
@@ -119,6 +133,32 @@ MELODICK_TEST(session_unedited_passthrough_and_stretch_uses_resynthesis) {
     session.stretch_blob_time(track_id, blob_id, old_duration * 1.5);
     session.render_all_dirty(8);
     MELODICK_EXPECT_TRUE(vocoder->render_calls > 0);
+}
+
+MELODICK_TEST(session_keeps_long_unvoiced_blobs_in_passthrough_mix) {
+    auto pitch = std::make_shared<FakePitchExtractorWithLongUnvoiced>();
+    auto vocoder = std::make_shared<FakeVocoder>();
+    melodick::app::Session session {pitch, vocoder};
+
+    std::vector<float> mono_44k(static_cast<std::size_t>(44100 * 2), 0.1f);
+    const auto track_id = session.import_audio_as_new_track(mono_44k, 44100, 1, "Lead");
+
+    const auto& blobs = session.track_blobs(track_id);
+    MELODICK_EXPECT_EQ(blobs.size(), static_cast<std::size_t>(3));
+    MELODICK_EXPECT_TRUE(blobs[1].is_unvoiced_only());
+    MELODICK_EXPECT_TRUE(!blobs[0].link_next.has_value());
+    MELODICK_EXPECT_TRUE(!blobs[1].link_prev.has_value());
+    MELODICK_EXPECT_TRUE(!blobs[1].link_next.has_value());
+    MELODICK_EXPECT_TRUE(!blobs[2].link_prev.has_value());
+    MELODICK_EXPECT_TRUE(std::fabs(blobs[0].time.end_seconds - blobs[1].time.start_seconds) < 1.0e-6);
+    MELODICK_EXPECT_TRUE(std::fabs(blobs[1].time.end_seconds - blobs[2].time.start_seconds) < 1.0e-6);
+
+    session.render_all_dirty(8);
+    MELODICK_EXPECT_EQ(vocoder->render_calls, static_cast<std::size_t>(0));
+
+    const auto audio = session.build_track_audio(track_id);
+    MELODICK_EXPECT_TRUE(audio.size() > 40000);
+    MELODICK_EXPECT_TRUE(std::fabs(static_cast<double>(audio[22050]) - 0.1) < 1.0e-3);
 }
 
 MELODICK_TEST(session_track_supports_inserting_audio_at_arbitrary_time) {
