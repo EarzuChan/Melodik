@@ -14,6 +14,7 @@
 #include <onnxruntime_cxx_api.h>
 
 #include "melodick/core/audio_resampler.h"
+#include "melodick/core/pitch_preprocessing.h"
 
 namespace melodick::capabilities {
 
@@ -507,6 +508,14 @@ public:
         if (sample_rate <= 0) throw std::invalid_argument("sample_rate must be positive");
 
         auto audio_16k = core::resample_audio_rate(mono_samples, sample_rate, kRmvpeSampleRate);
+        core::preprocess_rmvpe_audio_in_place(
+            audio_16k,
+            kRmvpeSampleRate,
+            core::RmvpeAudioPreprocessConfig {
+                .enabled = config_.rmvpe_input_preprocess.enabled,
+                .highpass_hz = config_.rmvpe_input_preprocess.highpass_hz,
+                .noise_gate_dbfs = config_.rmvpe_input_preprocess.noise_gate_dbfs,
+            });
         const std::vector waveform_shape {1, static_cast<int64_t>(audio_16k.size())};
 
         auto waveform = Ort::Value::CreateTensor<float>(
@@ -840,6 +849,11 @@ BackendConfig default_backend_config() {
     const auto fallback_hifigan = root / "pc_nsf_hifigan_44.1k_ONNX" / "pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx";
     cfg.hifigan_model_path = std::filesystem::exists(primary_hifigan) ? primary_hifigan.string() : fallback_hifigan.string();
     cfg.enable_uv_check = true;
+    cfg.rmvpe_input_preprocess = RmvpeInputPreprocessConfig {
+        .enabled = true,
+        .highpass_hz = 50.0f,
+        .noise_gate_dbfs = -50.0f,
+    };
     return cfg;
 }
 

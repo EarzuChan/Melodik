@@ -9,12 +9,19 @@
 
 namespace melodick::capabilities {
 
+struct RmvpeInputPreprocessConfig {
+    bool enabled {false};
+    float highpass_hz {50.0f};
+    float noise_gate_dbfs {-50.0f};
+};
+
 struct BackendConfig {
     std::string rmvpe_model_path {};
     std::string hifigan_model_path {};
     int inference_threads {1};
     float uv_threshold {0.5f};
     bool enable_uv_check {false};
+    RmvpeInputPreprocessConfig rmvpe_input_preprocess {};
 };
 
 class IPitchExtractor {

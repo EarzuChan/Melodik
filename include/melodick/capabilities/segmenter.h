@@ -16,7 +16,7 @@ struct SegmenterConfig {
 
 class NoteBlobSegmenter {
 public:
-    explicit NoteBlobSegmenter(SegmenterConfig config = {});
+    explicit NoteBlobSegmenter(const SegmenterConfig& config = {});
     [[nodiscard]] std::vector<core::NoteBlob> build_segments(const core::PitchSlice& f0) const;
 
 private:

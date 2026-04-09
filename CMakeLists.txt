@@ -15,6 +15,7 @@ set(MELODICK_ONNXRUNTIME_ROOT "${MELODICK_OLD_ROOT}/onnxruntime-win-x64-1.24.4" 
 add_library(melodick_core
     src/core/audio_resampler.cpp
     src/core/note_blob.cpp
+    src/core/pitch_preprocessing.cpp
 )
 target_include_directories(melodick_core PUBLIC include)
 
