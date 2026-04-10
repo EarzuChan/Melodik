@@ -2,6 +2,8 @@
 
 预览图：![overall_preview.png](art/overall_preview.png)
 
+图标都在：`art/`。
+
 ## 基础色彩
 用于特定功能组件（如钢琴键、渲染状态）的原始色彩。
 
